@@ -71,12 +71,12 @@ usort($items, fn($a, $b) => strnatcasecmp((string)($a['item_number'] ?? ''), (st
 <title>Starting Bid List</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 0; color: #1d1d1f; background: #e5e5ea; min-height: 100vh; padding: 32px 16px; box-sizing: border-box; }
-  .card { max-width: 700px; margin: 0 auto; background: #fff; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.12); padding: 28px 32px; }
+  .card { max-width: 900px; margin: 0 auto; background: #fff; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.12); padding: 28px 32px; }
   h2 { margin: 0 0 4px; }
   .sub { font-size: 13px; color: #555; margin-bottom: 16px; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
   th { background: #dbeafe; padding: 6px 8px; text-align: left; border: 1px solid #000; font-weight: 600; }
-  td { padding: 4px 8px; border: 1px solid #ccc; }
+  td { padding: 4px 8px; border: 1px solid #ccc; word-break: break-word; }
   tr:nth-child(even) td { background: #f0f7ff; }
   @media print {
     button { display: none; }
@@ -99,7 +99,14 @@ usort($items, fn($a, $b) => strnatcasecmp((string)($a['item_number'] ?? ''), (st
     </div>
   </div>
   <table>
-    <thead><tr><th style="white-space:nowrap;">Item #</th><th style="white-space:nowrap;">Category</th><th>Starting Bid</th><th style="white-space:nowrap;">Donor Name</th><th>Description</th></tr></thead>
+    <colgroup>
+      <col style="width:7%;">
+      <col style="width:24%;">
+      <col style="width:8%;">
+      <col style="width:14%;">
+      <col style="width:47%;">
+    </colgroup>
+    <thead><tr><th style="white-space:nowrap;">Item #</th><th>Category</th><th>Starting Bid</th><th>Donor Name</th><th>Description</th></tr></thead>
     <tbody>
 <?php foreach ($items as $item):
     $reserve = (float)preg_replace('/[^0-9.]/', '', (string)($item['reserve_amount'] ?? '0'));
@@ -110,9 +117,9 @@ usort($items, fn($a, $b) => strnatcasecmp((string)($a['item_number'] ?? ''), (st
 ?>
     <tr>
       <td style="white-space:nowrap;"><?= htmlspecialchars((string)($item['item_number'] ?? '')) ?></td>
-      <td style="white-space:nowrap;"><?= htmlspecialchars($catCode) ?> — <?= htmlspecialchars((string)$catName) ?></td>
+      <td><?= htmlspecialchars($catCode) ?> — <?= htmlspecialchars((string)$catName) ?></td>
       <td><?= sbl_money($startingBid) ?></td>
-      <td style="white-space:nowrap;"><?= htmlspecialchars((string)($item['donor_name'] ?? '')) ?></td>
+      <td><?= htmlspecialchars((string)($item['donor_name'] ?? '')) ?></td>
       <td><?= htmlspecialchars((string)($item['description'] ?? '')) ?></td>
     </tr>
 <?php endforeach; ?>
