@@ -1,6 +1,6 @@
 # SAM Project Status
 
-**Last updated:** 2026-07-20 — **checkpoint v5.1**: replaced the Starting Bid List's Member Name column with Donor Name, and ran a same-session experiment (added, then fully reverted at the user's request) building a separate public item-donation form with no ETCC Member fields. `test.html` updated, confirmed green by the user, checkpointed (minor version bump, committed, pushed).
+**Last updated:** 2026-08-16 — **checkpoint v5.4**: investigated a Home-screen metrics mismatch (Bidders tile stale vs. Registrations table; "Paid & Picked Up" counting orphaned payment records left over from a winners reset — explained, no code change needed since a "Clear Pickup & Pay" Developer Tools button already existed), then added zoom in/out controls to the Donated Items table. `test.html` updated, confirmed green by the user, checkpointed (minor version bump, committed, pushed).
 
 This file exists so a brand-new Claude Code session can resume this work with zero prior conversation context. Read this alongside `CLAUDE.md` (architecture/rules) before touching code.
 
@@ -8,9 +8,9 @@ This file exists so a brand-new Claude Code session can resume this work with ze
 
 ## Current state (as of this doc)
 
-- **Deployed version:** **v5.1** (`index.html` footer `#app-version`) — deployed code matches the latest checkpoint commit, no drift.
-- **Git:** `main` branch, last commit `214ef54` ("Checkpoint v5.1: Starting Bid List Donor Name column, brief public form experiment"), pushed to `origin` (https://github.com/BWERepo/ETCCSAM.git). Working tree is clean.
-- **Regression suite (`test.html`) was updated this session and confirmed green by the user** before the v5.1 checkpoint.
+- **Deployed version:** **v5.4** (`index.html` footer `#app-version`) — deployed code matches the latest checkpoint commit, no drift.
+- **Git:** `main` branch, last commit `57f1957` ("Checkpoint v5.4: Donated Items table zoom in/out controls"), pushed to `origin` (https://github.com/ETCCRepo/ETCCSAM.git). Working tree is clean.
+- **Regression suite (`test.html`) was updated this session and confirmed green by the user** before the v5.4 checkpoint.
 - **No uncommitted app-code work** as of this doc.
 
 ### ⚠️ Open items carried into the next session
@@ -20,7 +20,46 @@ This file exists so a brand-new Claude Code session can resume this work with ze
 3. **The Gmail-scan workflow's UI is hidden (`display:none`), not deleted**, and a large amount of supporting JS (OAuth token handling, inbox scanning, `parseEmailBody()`/`DEFAULT_FIELD_MAP`-driven parsing) remains in `index.html`, unreferenced by any visible UI. It couldn't be fully removed because the **Gmail OAuth Settings card is still load-bearing** — it configures the same Gmail API connection used by the currently-working **Announce Winners → Email Winners** feature (`sendWinnerEmails()` → `sendEmailsViaGmail()`). A future session could cleanly split "Gmail auth for sending" from "Gmail scanning for inbox import" if the scanning code is ever confirmed permanently dead.
 4. **`donate-item.php` remains fully removed** (unchanged from prior sessions) — `add-item.php` is the only item-donation entry point. Its old SQL-side backend (`donated_items_pending` table, `get_pending_donations`/`mark_donations_imported` in `api.php`) is still there, unused, per the same convention.
 5. **`starting-bid-list.php` has no password gate**, matching `add-item.php`'s convention — anyone with the URL can view the full donated-items list with donor names and starting bids. This was not explicitly discussed as a security tradeoff; flag it if the club raises privacy concerns about donor names being publicly listable.
-6. **A near-duplicate of `add-item.php` was created and fully removed this session** (`silent-auction-form.php` — see this session's write-up below). If a future request sounds like "make a public version of the item donation form without the member picker," check this history first rather than rebuilding from scratch, since the exact diff needed (remove `etccMemberName`/`memberEmail` from validation, DB write, confirmation email, and the HTML form/JS) is already documented below.
+6. **A near-duplicate of `add-item.php` was created and fully removed in the v5.1 session** (`silent-auction-form.php` — see that session's write-up below). If a future request sounds like "make a public version of the item donation form without the member picker," check this history first rather than rebuilding from scratch, since the exact diff needed (remove `etccMemberName`/`memberEmail` from validation, DB write, confirmation email, and the HTML form/JS) is already documented below.
+7. **The "Bidders: 17 vs. 25" Home/Registrations mismatch (v5.4 session) was explained but not confirmed fixed.** The user was asked to hard-refresh and re-compare Home vs. the Registrations screen; no confirmation came back before that session ended. If raised again, check whether it's simply the "Home tile only refreshes on `navigate('home')`" staleness, or genuine sync drift between localStorage and the MySQL backend (`[[project_data_sync_architecture]]`) — don't assume it's resolved. See the v5.4 write-up below for the full diagnosis.
+
+---
+
+## What was accomplished this session (checkpoint v5.4)
+
+Two threads: diagnosing a set of Home-screen metric questions the user raised (no code bugs found, one piece of user education plus confirming an existing tool covered the need), then a small new feature (table zoom).
+
+### 1. Home-screen metrics investigation — no bugs found
+The user asked three follow-up questions about the Home screen's metric tiles (`refreshHomeMetrics()` in `index.html`):
+
+- **"Bidders: 17" vs. Registrations screen showing 25.** Traced both to the same source — `Bidders.getAll()` → `DB.getBidders()` → `localStorage['sam_{auctionId}_bidders']` — so they should never disagree. Likely explanations given to the user: the Home tile only recalculates when `navigate('home')` fires `refreshHomeMetrics()`, so it can go stale if you register more bidders without revisiting Home; or transient drift from the dual-layer localStorage+MySQL sync (see `[[project_data_sync_architecture]]`). User was advised to hard-refresh and compare again; no follow-up report came back in this session, so **this discrepancy is not confirmed resolved** — if it resurfaces, start from this explanation rather than re-diagnosing from scratch.
+- **"Paid & Picked Up: 5" despite "Winners Recorded: 0" and the Pay & Pickup screen itself saying "No winners recorded yet."** Root cause identified: the tile counts raw entries in `sam_payments` (`Object.values(payments).filter(p => p.paid).length`) regardless of whether a winner currently exists for that bidder — so these were **orphaned payment records** left over from before winners got cleared/reset for this auction. No live "winners → clear their payments too" cascade exists.
+- **User asked to add a "Clear Payments" Developer Tools action.** Checked `index.html`'s Developer Tools card first — a `btn-clear-payments` button labeled **"Clear Pickup & Pay"** already exists (line ~1859), wired to `clearScopedData('payments', 'pickup & pay records')` and respecting the "Clear scope" auction dropdown above it. **No code was added** — the user was pointed at the existing button/flow instead (Developer Tools → set Clear scope to the current auction → Clear Pickup & Pay).
+
+No files changed for this thread.
+
+### 2. New feature — Donated Items table zoom in/out
+The user asked for the ability to zoom in/out on the Donated Items table (Step 1 screen, `#items-table`). No existing zoom mechanism existed anywhere in the app (confirmed via grep for "zoom").
+
+Implementation in `index.html`:
+- Added a zoom control group (− / percentage label / + / Reset) to `#items-card`'s card-header toolbar, right of the 🖨 Print button.
+- Wrapped the table's scroll container with `id="items-table-wrap"` (previously an unlabeled `<div style="overflow:auto;max-height:600px;">`) as the zoom target.
+- New functions: `applyItemsZoom(pct)` sets `#items-table-wrap.style.zoom = pct/100` and updates the `#items-zoom-label` text; `zoomItemsTable(delta)` reads/writes the current percentage from `localStorage['sam_items_zoom']` (default 100), steps by 10 per click, clamps to **60%–150%**, and `delta === 0` (the Reset button) forces exactly 100%.
+- Zoom **persists across reloads**: the app-init block (same block that calls `TableKit.initAll()` / `fixAllStickyHeaders()` / `applyBranding()`) now also calls `applyItemsZoom(parseInt(localStorage.getItem('sam_items_zoom'), 10) || 100)` on load.
+- Deliberately used the CSS `zoom` property directly on the wrapper `<div>`, not a TableKit option — `table.css`/`table.js` are untouched, per the project's "never modify TableKit files" rule. `zoom` is Chromium/Edge-native; this is an internal admin tool so that's an acceptable tradeoff, but it won't work in Firefox if that's ever a real requirement — worth flagging if a user reports the buttons doing nothing.
+
+### 3. `test.html` updated, confirmed green
+Added a new suite `'Donated Items table — zoom in/out controls (this session)'` (4 assertions covering the toolbar controls, the clamped step/reset logic, the CSS-zoom-not-TableKit approach, and reload persistence). Deployed via `.\deploy.ps1 test.html`, then **confirmed green by the user** at https://etccapps.com/apps/sam/test.html before the checkpoint.
+
+### 4. Checkpoint v5.4 (minor version bump)
+Straightforward minor bump via `.\bump-version.ps1` (no `-Major` requested).
+
+### Files touched this session
+| File | Status | Notes |
+|---|---|---|
+| `index.html` | committed (`57f1957`) | Zoom controls + `applyItemsZoom()`/`zoomItemsTable()`; version bump to v5.4. No Home-metrics code changes (investigation only). |
+| `test.html` | committed (`57f1957`) | New zoom-feature suite added |
+| `PROJECT_STATUS.md` | this update | continuity doc, not app code |
 
 ---
 
