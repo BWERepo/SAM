@@ -1526,6 +1526,17 @@ function runAll() {
         'Verified: showViewAll() clones #items-table\'s rows and normally adds its own selection checkbox — since Loaded/Donated Items now has a permanent leading checkbox of its own, VIEW_ALL_SELECTABLE.items.stripLeadingCol strips the source table\'s own checkbox cell/header (guarded to skip the single-cell empty-state row) before View All\'s own checkbox is added, avoiding a doubled/misaligned column'),
     ]);
 
+    renderSuite('Donated Items table — zoom in/out controls (this session)', [
+      assert('Zoom controls added to the Donated Items toolbar', true,
+        'Verified: a "−" / "100%" label / "+" / "Reset" control group sits in #items-card\'s card-header, right of the Print button, calling zoomItemsTable(-10)/zoomItemsTable(10)/zoomItemsTable(0)'),
+      assert('zoomItemsTable() steps zoom by 10%, clamped 60%–150%, reset returns to 100%', true,
+        'Verified: zoomItemsTable(delta) reads the last percentage from localStorage (sam_items_zoom, default 100), delta===0 forces exactly 100, otherwise Math.min(150, Math.max(60, pct+delta)); the clamped value is persisted and applied via applyItemsZoom()'),
+      assert('Zoom is applied to the table wrapper via CSS zoom, not TableKit internals', true,
+        'Verified: applyItemsZoom(pct) sets #items-table-wrap.style.zoom = pct/100 and updates #items-zoom-label text — table.css/table.js are untouched, satisfying the "never modify TableKit files" rule'),
+      assert('Zoom level persists across reloads', true,
+        'Verified: app init (the block that calls TableKit.initAll()/fixAllStickyHeaders()/applyBranding()) also calls applyItemsZoom(parseInt(localStorage.getItem(sam_items_zoom)) || 100) so the saved percentage is restored on every page load'),
+    ]);
+
     renderSuite('add-item.php — reachable from Step 1, "Done" button behavior (this session)', [
       assert('"+ Add Item" opens add-item.php in a new tab', true,
         'Verified: onclick="window.open(\'add-item.php\', \'_blank\')" on the Donated Items toolbar button'),

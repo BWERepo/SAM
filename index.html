@@ -14,8 +14,8 @@
   </script>
   <title>ETCC Silent Auction Manager</title>
   <link rel="icon" id="favicon-link" type="image/png" href="Images/ETCClogoWhiteBackground.png" />
-  <link rel="stylesheet" href="css/table.css?v=1786630377" />
-  <link rel="stylesheet" href="css/toolbar.css?v=1786630377" />
+  <link rel="stylesheet" href="css/table.css?v=1786874744" />
+  <link rel="stylesheet" href="css/toolbar.css?v=1786874744" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1078,13 +1078,19 @@
             <span style="font-size:14px;font-weight:600;">Donated Items</span>
             <button class="btn primary workflow-edit-btn" onclick="window.open('add-item.php', '_blank')" style="font-size:14px;font-weight:600;padding:10px 20px;background:var(--accent);color:#fff;border-color:var(--accent);">+ Add Item</button>
           </div>
-          <div style="display:flex;gap:8px;">
+          <div style="display:flex;gap:8px;align-items:center;">
             <button class="btn danger" style="font-size:11px;padding:3px 10px;" onclick="deleteCheckedItems()">Delete Item</button>
             <button class="btn" style="font-size:11px;padding:3px 10px;" onclick="clearTableFilters('#items-table')">Clear Filter</button>
             <button class="btn" style="font-size:11px;padding:3px 10px;" onclick="printDonatedItemsList()">🖨 Print</button>
+            <div style="display:flex;align-items:center;gap:2px;margin-left:6px;border-left:1px solid var(--border);padding-left:8px;">
+              <button class="btn" style="font-size:11px;padding:3px 9px;" onclick="zoomItemsTable(-10)" title="Zoom out">&#8722;</button>
+              <span id="items-zoom-label" style="font-size:11px;color:var(--text-secondary);min-width:38px;text-align:center;">100%</span>
+              <button class="btn" style="font-size:11px;padding:3px 9px;" onclick="zoomItemsTable(10)" title="Zoom in">&#43;</button>
+              <button class="btn" style="font-size:11px;padding:3px 9px;" onclick="zoomItemsTable(0)" title="Reset zoom">Reset</button>
+            </div>
           </div>
         </div>
-        <div style="overflow:auto;max-height:600px;">
+        <div style="overflow:auto;max-height:600px;" id="items-table-wrap">
           <table class="tablekit" id="items-table" style="table-layout:fixed;width:100%;min-width:1986px;">
             <colgroup>
               <col style="width:36px;">
@@ -2386,8 +2392,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="js/table.js?v=1786630377"></script>
-<script src="js/toolbar.js?v=1786630377"></script>
+<script src="js/table.js?v=1786874744"></script>
+<script src="js/toolbar.js?v=1786874744"></script>
 <script>
 (function() {
   const _origInit = PageToolbar.init.bind(PageToolbar);
@@ -3860,6 +3866,29 @@ function deleteAllItems() {
   refreshItemsTable();
   persistItemLoadScreenToDB();
   refreshMetrics();
+}
+
+// ── Donated Items table zoom ────────────────────────────────────────────────
+// Scales the items table in place (font + row size) so users can fit more
+// columns on screen or enlarge text for readability, without touching
+// TableKit itself. Persisted per-browser so it survives reloads.
+const ITEMS_ZOOM_KEY = 'sam_items_zoom';
+const ITEMS_ZOOM_MIN = 60;
+const ITEMS_ZOOM_MAX = 150;
+
+function applyItemsZoom(pct) {
+  const wrap = document.getElementById('items-table-wrap');
+  const label = document.getElementById('items-zoom-label');
+  if (!wrap) return;
+  wrap.style.zoom = (pct / 100);
+  if (label) label.textContent = `${pct}%`;
+}
+
+function zoomItemsTable(delta) {
+  let pct = parseInt(localStorage.getItem(ITEMS_ZOOM_KEY), 10) || 100;
+  pct = delta === 0 ? 100 : Math.min(ITEMS_ZOOM_MAX, Math.max(ITEMS_ZOOM_MIN, pct + delta));
+  localStorage.setItem(ITEMS_ZOOM_KEY, String(pct));
+  applyItemsZoom(pct);
 }
 
 function printDonatedItemsList() {
@@ -10800,6 +10829,7 @@ const DuplicateEmailChecker = {
   TableKit.initAll();
   fixAllStickyHeaders();
   applyBranding();
+  applyItemsZoom(parseInt(localStorage.getItem(ITEMS_ZOOM_KEY), 10) || 100);
 
   const settings = DB.getSettings();
   if (!settings.gmailClientId) {
@@ -11033,7 +11063,7 @@ async function testSamApiUrl() {
 <div id="app-footer">
   <div>&copy; 2026 <span id="footer-club-name">${getClub().name}</span> &nbsp;&middot;&nbsp; Knoxville, TN</div>
   <div><a href="mailto:etccwebsite.webmanager@gmail.com">etccwebsite.webmanager@gmail.com</a></div>
-  <div>Version: <span id="app-version">v5.3</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 13, 2026 2:12 PM</span></div>
+  <div>Version: <span id="app-version">v5.4</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 16, 2026 10:05 AM</span></div>
   <div>Website by Business Web Express &nbsp;&middot;&nbsp; <a href="mailto:info@businesswebexpress.com">info@businesswebexpress.com</a></div>
 </div>
 
