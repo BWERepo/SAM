@@ -1,6 +1,6 @@
 # SAM Project Status
 
-**Last updated:** 2026-08-27 — **checkpoint v6.0** (major bump, user-requested): added an **Open Bids** category (low-value items with no reserve get a $1 opening bid and no preprinted increments), guaranteed every preprinted bid row is **strictly larger than the previous one**, aligned `starting-bid-list.php` with the new bid math, and fixed two real UI bugs (Home Auctions panel needing a hard refresh after login; the Developer nav row closing the drawer out from under its own submenu). `test.html` updated, confirmed green by the user, checkpointed.
+**Last updated:** 2026-08-27, later same-day session — **checkpoint v6.1**: unified the favicon fallback, which previously had two disagreeing hardcoded defaults (`updateFavicon()`'s own `ETCC-Logo.ico` vs. `getClub()`'s `ETCClogoWhiteBackground.png`) that could each win depending on load order. `updateFavicon()` now defers to `getClub().favicon` as the single source of truth. `test.html` updated, confirmed green by the user, checkpointed. This is on top of the same-day v6.0 session below (Open Bids category, rising bid ladder, login/nav fixes) — read that write-up too if picking this up cold.
 
 This file exists so a brand-new Claude Code session can resume this work with zero prior conversation context. Read this alongside `CLAUDE.md` (architecture/rules) before touching code.
 
@@ -8,9 +8,9 @@ This file exists so a brand-new Claude Code session can resume this work with ze
 
 ## Current state (as of this doc)
 
-- **Deployed version:** **v6.0** (`index.html` footer `#app-version`) — deployed code matches the latest checkpoint commit, no drift. Major bump was explicitly requested by the user (`/ETCCSAMCheckpoint v6.0`), reached via `.\bump-version.ps1 -Major` from v5.4.
-- **Git:** `main` branch, last commit `7f31481` ("Checkpoint v6.0: Open Bids category, rising bid ladder, login and nav fixes"), pushed to `origin` (https://github.com/ETCCRepo/ETCCSAM.git). Working tree is clean.
-- **Regression suite (`test.html`) was updated this session and confirmed green by the user** before the v6.0 checkpoint.
+- **Deployed version:** **v6.1** (`index.html` footer `#app-version`) — deployed code matches the latest checkpoint commit, no drift.
+- **Git:** `main` branch, last commit `be653c4` ("Checkpoint v6.1: unify the favicon fallback"), pushed to `origin` (https://github.com/ETCCRepo/ETCCSAM.git). Working tree is clean.
+- **Regression suite (`test.html`) was updated this session and confirmed green by the user** before the v6.1 checkpoint.
 - **No uncommitted app-code work** as of this doc.
 
 ### ⚠️ Open items carried into the next session
@@ -24,6 +24,32 @@ This file exists so a brand-new Claude Code session can resume this work with ze
 7. **PHP files cannot be syntax-checked locally** — `php` is not on PATH in this environment (`php -l` fails with "command not found"). Edits to `starting-bid-list.php` / `add-item.php` / `api.php` are verified by inspection only, then confirmed by loading the live page. Be especially careful with PHP 8 rules that older PHP tolerated — e.g. **nested ternaries must be explicitly parenthesized** or the file fatals on load.
 8. **A near-duplicate of `add-item.php` was created and fully removed in the v5.1 session** (`silent-auction-form.php` — see that session's write-up below). If a future request sounds like "make a public version of the item donation form without the member picker," check this history first rather than rebuilding from scratch, since the exact diff needed (remove `etccMemberName`/`memberEmail` from validation, DB write, confirmation email, and the HTML form/JS) is already documented below.
 9. **The "Bidders: 17 vs. 25" Home/Registrations mismatch (v5.4 session) was explained but not confirmed fixed.** The user was asked to hard-refresh and re-compare Home vs. the Registrations screen; no confirmation came back before that session ended. If raised again, check whether it's simply the "Home tile only refreshes on `navigate('home')`" staleness, or genuine sync drift between localStorage and the MySQL backend (`[[project_data_sync_architecture]]`) — don't assume it's resolved. See the v5.4 write-up below for the full diagnosis.
+
+---
+
+## What was accomplished this session (checkpoint v6.1)
+
+Small, single-topic follow-up in the same day as the v6.0 session below — the user asked "where is the favicon," which surfaced a real duplicate-fallback bug while answering.
+
+### 1. Real bug — two disagreeing hardcoded favicon fallbacks
+**How it surfaced:** answering "where is the favicon" required tracing all the code paths that touch it, which turned up an inconsistency: the `<head>` `<link rel="icon">` tag and `getClub().favicon` ([index.html:6348](index.html:6348)) both defaulted to `Images/ETCClogoWhiteBackground.png`, but `updateFavicon()` ([index.html:6263](index.html:6263), pre-fix) carried its own separate hardcoded fallback, `Images/ETCC-Logo.ico`. With no `clubFavicon` setting configured, the tab icon's actual value depended on which code path ran last — the `.png` on first paint from the static tag, then potentially the `.ico` once settings loaded and `applyBranding()`/`updateFavicon()` ran.
+
+**Fix:** `updateFavicon()` no longer carries its own literal — it now reads `link.href = faviconUrl || getClub().favicon`, deferring to `getClub()` as the single source of truth. Also removed the `type="image/png"` attribute from the static `<head>` tag, since Settings → Club Branding → Club Favicon URL can point the href at any format (`.ico`/`.svg`/etc.) and a hardcoded png type would misdescribe those overrides.
+
+**Where the favicon can be changed:** Settings → Club Branding → **Club Favicon URL** (`#inp-club-favicon` → `clubFavicon` setting, applied via `applyBranding()`/`updateFavicon()`).
+
+### 2. `test.html` updated, confirmed green
+New suite `'Favicon — unified default fallback (v6.1)'` (4 assertions) covering the root cause, the fix, the `<head>` tag's type-attribute removal, and that `getClub()` remains the sole place the default path is defined. Deployed via `.\deploy.ps1 test.html`, confirmed green by the user before the checkpoint.
+
+### 3. Checkpoint v6.1 (minor version bump)
+Straightforward minor bump from v6.0 via `.\bump-version.ps1` (no `-Major` requested).
+
+### Files touched this session
+| File | Status | Notes |
+|---|---|---|
+| `index.html` | committed (`be653c4`) | `updateFavicon()`'s duplicate literal removed, defers to `getClub().favicon`; `<head>` icon tag's `type="image/png"` dropped; version bump to v6.1 |
+| `test.html` | committed (`be653c4`) | 1 new suite / 4 assertions. Confirmed green by the user before the checkpoint. |
+| `PROJECT_STATUS.md` | this file, being committed now | continuity doc, not app code |
 
 ---
 
