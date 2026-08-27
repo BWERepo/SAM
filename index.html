@@ -13,9 +13,12 @@
     gtag('config', 'G-0LY33QPHZJ');
   </script>
   <title>ETCC Silent Auction Manager</title>
-  <link rel="icon" id="favicon-link" type="image/png" href="Images/ETCClogoWhiteBackground.png" />
-  <link rel="stylesheet" href="css/table.css?v=1787825616" />
-  <link rel="stylesheet" href="css/toolbar.css?v=1787825616" />
+  <!-- No type="..." here on purpose: Settings > Club Branding can point this at
+       any format (.ico/.svg/.png), and a hardcoded type would then be a lie.
+       Default must stay in sync with getClub()'s favicon fallback. -->
+  <link rel="icon" id="favicon-link" href="Images/ETCClogoWhiteBackground.png" />
+  <link rel="stylesheet" href="css/table.css?v=1787828000" />
+  <link rel="stylesheet" href="css/toolbar.css?v=1787828000" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -2397,8 +2400,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="js/table.js?v=1787825616"></script>
-<script src="js/toolbar.js?v=1787825616"></script>
+<script src="js/table.js?v=1787828000"></script>
+<script src="js/toolbar.js?v=1787828000"></script>
 <script>
 (function() {
   const _origInit = PageToolbar.init.bind(PageToolbar);
@@ -6261,9 +6264,13 @@ function submitAuthPassword() {
 }
 
 function updateFavicon(faviconUrl) {
-  if (!faviconUrl) faviconUrl = 'Images/ETCC-Logo.ico';
+  // Defer to getClub() for the fallback instead of carrying a second hardcoded
+  // path. This used to default to Images/ETCC-Logo.ico while the <head> tag and
+  // getClub() both defaulted to the .png, so with no clubFavicon configured the
+  // tab icon depended on which code path ran last (.png on first paint, then
+  // the .ico once settings loaded). One default, defined in one place.
   const link = document.getElementById('favicon-link');
-  if (link) link.href = faviconUrl;
+  if (link) link.href = faviconUrl || getClub().favicon;
 }
 
 function saveSettings() {
@@ -11114,7 +11121,7 @@ async function testSamApiUrl() {
 <div id="app-footer">
   <div>&copy; 2026 <span id="footer-club-name">${getClub().name}</span> &nbsp;&middot;&nbsp; Knoxville, TN</div>
   <div><a href="mailto:etccwebsite.webmanager@gmail.com">etccwebsite.webmanager@gmail.com</a></div>
-  <div>Version: <span id="app-version">v6.0</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 27, 2026 10:13 AM</span></div>
+  <div>Version: <span id="app-version">v6.1</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 27, 2026 10:53 AM</span></div>
   <div>Website by Business Web Express &nbsp;&middot;&nbsp; <a href="mailto:info@businesswebexpress.com">info@businesswebexpress.com</a></div>
 </div>
 

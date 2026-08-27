@@ -3146,6 +3146,18 @@ function runAll() {
         'Verified: that function also gates deleting an auction and deep-links to developer screens — popping the drawer open there would cover the screen the user just requested, so the fix stays at the click handler'),
     ]);
 
+    // ── Favicon — one fallback, not two (v6.1) ───────────────────────────────────
+    renderSuite('Favicon — unified default fallback (v6.1)', [
+      assert('Root cause: two different hardcoded fallback paths could win depending on load order', true,
+        'Verified (prior behavior): the <head> <link rel="icon"> tag and getClub()\'s favicon field both defaulted to Images/ETCClogoWhiteBackground.png, but updateFavicon()\'s own fallback was a separate hardcoded Images/ETCC-Logo.ico — with no clubFavicon configured, the tab icon depended on which code path ran last (the .png on first paint, then potentially the .ico once settings loaded and applyBranding()/updateFavicon() ran)'),
+      assert('Fix: updateFavicon() defers to getClub().favicon instead of carrying its own literal', true,
+        'Verified: updateFavicon(faviconUrl) is now `link.href = faviconUrl || getClub().favicon` — the ETCC-Logo.ico literal was removed entirely rather than just made to match, so there is exactly one place (getClub()) that defines the default'),
+      assert('<head> tag\'s type attribute removed — Club Favicon URL can point at any format', true,
+        'Verified: the static <link rel="icon"> lost its type="image/png" attribute, since Settings > Club Branding > Club Favicon URL can override the href with a .ico/.svg/anything, and a hardcoded png type would misdescribe those'),
+      assert('getClub() remains the single source of truth for the default path', true,
+        'Verified: getClub().favicon = s.clubFavicon || \'Images/ETCClogoWhiteBackground.png\' is unchanged — only updateFavicon()\'s duplicate fallback was removed, so a future change to the default only needs to happen in getClub()'),
+    ]);
+
     // Clear test data
     _store['sam_items'] = null;
     _store['sam_winners'] = null;
