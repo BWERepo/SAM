@@ -14,8 +14,8 @@
   </script>
   <title>ETCC Silent Auction Manager</title>
   <link rel="icon" id="favicon-link" type="image/png" href="Images/ETCClogoWhiteBackground.png" />
-  <link rel="stylesheet" href="css/table.css?v=1786874744" />
-  <link rel="stylesheet" href="css/toolbar.css?v=1786874744" />
+  <link rel="stylesheet" href="css/table.css?v=1787825616" />
+  <link rel="stylesheet" href="css/toolbar.css?v=1787825616" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1739,6 +1739,11 @@
             <span class="form-hint">Number of bid rows on each bid sheet. Bids are evenly incremented from Starting Bid to Final Bid.</span>
           </div>
           <div class="form-row">
+            <label for="inp-open-bid-max">Open Bids</label>
+            <input type="number" id="inp-open-bid-max" min="0" step="0.01" style="width:100px;" />
+            <span class="form-hint">Maximum item value (with no reserve set) that counts as an open bid item. Those bid sheets open at $1 and print no bid increments — bidders write their own amounts.</span>
+          </div>
+          <div class="form-row">
             <label for="inp-walk-in-start">Walk-in Bidder Start #</label>
             <input type="number" id="inp-walk-in-start" min="1" step="1" style="width:100px;" />
             <span class="form-hint">Starting bidder number assigned to walk-in (non-pre-registration) bidders. Default: 1000.</span>
@@ -2392,8 +2397,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="js/table.js?v=1786874744"></script>
-<script src="js/toolbar.js?v=1786874744"></script>
+<script src="js/table.js?v=1787825616"></script>
+<script src="js/toolbar.js?v=1787825616"></script>
 <script>
 (function() {
   const _origInit = PageToolbar.init.bind(PageToolbar);
@@ -2476,6 +2481,9 @@ const DEFAULT_SETTINGS = {
   startingBidPct:  30,
   finalBidPct:     150,
   bidCount:        25,
+  // Max declared item value (no reserve set) that still counts as an "open bid"
+  // item — those bid sheets open at $1 with no pre-printed increment ladder.
+  openBidMax:      35,
   emailFolder:    'INBOX',
   squarePct:       2.6,
   squareFee:       0.10,
@@ -4246,6 +4254,9 @@ function printBiddingSheets() {
 
   const bidCount     = 20; // fixed at 20 rows so each bid sheet fills exactly one page
   const rowHeight    = parseFloat(DB.getSettings().bidRowHeight) || 0.28; // in, editable in this screen's toolbar
+  // Settings → Auction Setup → "Open Bids": max declared value (reserve unset)
+  // that still counts as an open-bid item. 0 disables the category entirely.
+  const openBidMax   = parseMoney(DB.getSettings().openBidMax ?? 35);
 
   const items = Items.getAll();
   const selectedNums = new Set(checked.map(tr => tr.cells[1]?.textContent.trim()));
@@ -4256,16 +4267,33 @@ function printBiddingSheets() {
     const itemValueRaw = parseFloat(String(item.item_value || item.value || '0').replace(/[^0-9.]/g, '')) || 0;
     // Value: reserve if present, otherwise item value
     const value = reserveRaw || itemValueRaw;
-    // Starting bid: reserve if present, otherwise 30% of item value
-    const startingBid = reserveRaw || (itemValueRaw * 0.30);
+    // Open-bid item: no reserve specified AND the declared value is at or below
+    // the Open Bids threshold. These open at $1 with no increment ladder — the
+    // $1 prints on the first row only and bidders write their own amounts on
+    // the rest. Everything else keeps the original reserve/percentage math.
+    const isOpenBid = reserveRaw === 0 && itemValueRaw <= openBidMax;
+    // Starting bid: $1 for open bids; else reserve if present, else 30% of item value
+    const startingBid = isOpenBid ? 1 : (reserveRaw || (itemValueRaw * 0.30));
     // Increment: 10% of value if value < $100, 7% of value if value >= $100
     const incPct = value < 100 ? 0.10 : 0.07;
-    const incrementAmount = value * incPct;
+    const incrementAmount = isOpenBid ? 0 : value * incPct;
     const bidAmounts = [];
+    let prevAmt = null;
     for (let i = 0; i < bidCount; i++) {
-      bidAmounts.push(Math.round(startingBid + i * incrementAmount));
+      let amt = Math.round(startingBid + i * incrementAmount);
+      // Rounding an increment under $1 collapsed consecutive rows onto the same
+      // dollar figure — a $2 reserve (10% = $0.20/step) printed 2, 2, 2, 3, 3...
+      // Force every preprinted row at least $1 above the one before it so the
+      // ladder always climbs. Items whose increment is already >= $1 are
+      // unaffected, so existing sheets keep their current amounts.
+      if (prevAmt !== null && amt <= prevAmt) amt = prevAmt + 1;
+      prevAmt = amt;
+      bidAmounts.push(amt);
     }
     const bidRows   = bidAmounts.map((amt, idx) => {
+      // Open-bid sheets print the $1 opening bid on row 1 only; rows 2-N stay
+      // blank so bidders can write in whatever they want.
+      if (isOpenBid && idx > 0) return `<tr><td></td><td></td><td></td></tr>`;
       const disp = '$' + amt.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
       return `<tr><td></td><td></td><td>${disp}</td></tr>`;
     }).join('');
@@ -6097,6 +6125,7 @@ function loadSettingsForm() {
   document.getElementById('inp-starting-bid-pct').value = s.startingBidPct ?? 30;
   document.getElementById('inp-final-bid-pct').value    = s.finalBidPct    ?? 150;
   document.getElementById('inp-bid-count').value        = s.bidCount       ?? 25;
+  document.getElementById('inp-open-bid-max').value     = s.openBidMax     ?? 35;
   document.getElementById('inp-walk-in-start').value    = s.walkInStart    ?? 1000;
   document.getElementById('inp-square-pct').value       = s.squarePct      ?? 2.6;
   document.getElementById('inp-square-fee').value       = (s.squareFee ?? 0.10).toFixed(2);
@@ -6263,6 +6292,9 @@ function saveSettings() {
     startingBidPct: parseInt(document.getElementById('inp-starting-bid-pct').value, 10) || 0,
     finalBidPct:    parseInt(document.getElementById('inp-final-bid-pct').value,    10) || 0,
     bidCount:       parseInt(document.getElementById('inp-bid-count').value,         10) || 20,
+    // Blank/invalid saves as 0, which turns the open-bid category off entirely
+    // (no item value is <= 0) — an explicit 0 is the natural "disable" value.
+    openBidMax:     parseFloat(document.getElementById('inp-open-bid-max').value)      || 0,
     walkInStart:    parseInt(document.getElementById('inp-walk-in-start').value,     10) || 1000,
     squarePct:      parseFloat(document.getElementById('inp-square-pct').value)     || 0,
     squareFee:      parseFloat(document.getElementById('inp-square-fee').value)     || 0,
@@ -8861,8 +8893,16 @@ navItems.forEach(item => item.addEventListener('click', () => navigate(item.data
 
   hamburger?.addEventListener('click', toggleNav);
   backdrop?.addEventListener('click', closeNav);
-  // Close the drawer whenever any nav entry is chosen
-  navEl?.querySelectorAll('.nav-item, a').forEach(el => el.addEventListener('click', closeNav));
+  // Close the drawer whenever any nav entry is chosen — except the Developer
+  // row, which expands a submenu in place instead of navigating anywhere.
+  // Closing on that click left the submenu unlocked but off-screen, so the
+  // menu appeared to vanish after entering the developer password (the auth
+  // modal sits at z-index 2000, well above the drawer's 200, so leaving the
+  // drawer open behind it is fine).
+  navEl?.querySelectorAll('.nav-item, a').forEach(el => {
+    if (el.id === 'nav-developer') return;
+    el.addEventListener('click', closeNav);
+  });
   // Escape closes the drawer
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNav(); });
 })();
@@ -9023,6 +9063,13 @@ function initializePasswordScreen() {
         // the pre-login boot sync returned nothing, so pull the real data now.
         await syncFromKeyValueDB();
         refreshHomeMetrics();
+        // The Home screen's Auctions panel/list was already rendered once at
+        // boot with the (empty, pre-login) data — refreshHomeMetrics() alone
+        // only updates the small stat cards, so without this the "No auctions
+        // yet" panel stayed stuck until a full page reload. Re-render it now
+        // that syncFromKeyValueDB() has pulled the real data in.
+        updateHomeAuctionPanel();
+        renderAuctionsList();
         return;
       }
       console.log('[Password] ✗ Incorrect password');
@@ -9321,6 +9368,10 @@ function initializeEntryGate() {
         // the pre-login boot sync returned nothing, so pull the real data now.
         await syncFromKeyValueDB();
         refreshHomeMetrics();
+        // See the matching comment in initializePasswordScreen()'s checkPassword() —
+        // refreshHomeMetrics() alone doesn't re-render the Auctions panel/list.
+        updateHomeAuctionPanel();
+        renderAuctionsList();
       }
     } catch (e) {
       // Even if the session call fails, the local password matched — let them in.
@@ -11063,7 +11114,7 @@ async function testSamApiUrl() {
 <div id="app-footer">
   <div>&copy; 2026 <span id="footer-club-name">${getClub().name}</span> &nbsp;&middot;&nbsp; Knoxville, TN</div>
   <div><a href="mailto:etccwebsite.webmanager@gmail.com">etccwebsite.webmanager@gmail.com</a></div>
-  <div>Version: <span id="app-version">v5.4</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 16, 2026 10:05 AM</span></div>
+  <div>Version: <span id="app-version">v6.0</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 27, 2026 10:13 AM</span></div>
   <div>Website by Business Web Express &nbsp;&middot;&nbsp; <a href="mailto:info@businesswebexpress.com">info@businesswebexpress.com</a></div>
 </div>
 

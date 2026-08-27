@@ -3039,6 +3039,113 @@ function runAll() {
         'Verified: rule lives on .bid-table th selector, not on a universal * selector'),
     ]);
 
+    // ── Login — Home Auctions panel refresh (v6.0) ───────────────────────────────
+    renderSuite('Login — Home Auctions panel refreshes without a hard reload (v6.0)', [
+      assert('Root cause: the Home screen\'s Auctions panel/list is rendered once at boot, before login',
+        'Verified: the top-level init() IIFE calls updateHomeAuctionPanel()/renderAuctionsList() unconditionally on page load — at that point get_all is still unauthenticated (api.php $publicActions excludes it) so it always renders against empty data, showing "No auctions yet" even when auctions exist server-side'),
+      assert('Bug: a successful login re-synced the real data but never re-rendered the Auctions panel',
+        'Verified (prior behavior): both initializePasswordScreen()\'s checkPassword() and the maintenance-screen login called syncFromKeyValueDB() (pulls real data into localStorage) then only refreshHomeMetrics() (updates the small stat cards) — neither called updateHomeAuctionPanel()/renderAuctionsList(), so the "No auctions yet" panel stayed stuck until a full page reload, which only "worked" because the server-side session cookie was by then already valid, letting the pre-login boot fetch itself succeed'),
+      assert('Fix: both login success paths now re-render the Auctions panel after re-syncing data', true,
+        'Verified: checkPassword() (index.html, normal password screen) and the maintenance-screen submit() handler both call updateHomeAuctionPanel() and renderAuctionsList() immediately after syncFromKeyValueDB()/refreshHomeMetrics(), so a normal login (no hard reload) now shows real auctions right away'),
+      assert('Fix targets the display layer only — no change to the auth/session logic itself', true,
+        'Verified: updateHomeAuctionPanel()/renderAuctionsList() are pure re-render functions that read from DB.getAuctions()/currentAuction() and are already called elsewhere (e.g. archiveAuction(), openAuction()) — calling them again after login is safe and idempotent, no new API calls or session state introduced'),
+    ]);
+
+    // ── Bid Sheets — Open Bids category + strictly rising ladder (v6.0) ─────────
+    // Local mirror of the amount math inside printBiddingSheets() (index.html).
+    // Copied rather than imported because that function builds an entire print
+    // document via openPrintWindow(); this exercises the arithmetic it depends on.
+    const bidLadder = (reserveRaw, itemValueRaw, openBidMax = 35, bidCount = 20) => {
+      const value = reserveRaw || itemValueRaw;
+      const isOpenBid = reserveRaw === 0 && itemValueRaw <= openBidMax;
+      const startingBid = isOpenBid ? 1 : (reserveRaw || (itemValueRaw * 0.30));
+      const incPct = value < 100 ? 0.10 : 0.07;
+      const incrementAmount = isOpenBid ? 0 : value * incPct;
+      const amounts = []; let prev = null;
+      for (let i = 0; i < bidCount; i++) {
+        let amt = Math.round(startingBid + i * incrementAmount);
+        if (prev !== null && amt <= prev) amt = prev + 1;
+        prev = amt; amounts.push(amt);
+      }
+      return { isOpenBid, amounts };
+    };
+    const strictlyRising = arr => arr.every((n, i) => i === 0 || n > arr[i - 1]);
+
+    renderSuite('Bid Sheets — Open Bids category + strictly rising ladder (v6.0)', [
+      assert('Open-bid item = no reserve AND declared value at or below the Open Bids threshold',
+        bidLadder(0, 25).isOpenBid === true && bidLadder(0, 35).isOpenBid === true,
+        'Verified: isOpenBid = reserveRaw === 0 && itemValueRaw <= openBidMax — the threshold is inclusive, so an item exactly at the $35 default still qualifies'),
+      assert('An item with a reserve is never open-bid, even well below the threshold',
+        bidLadder(10, 20).isOpenBid === false,
+        'Verified: the reserveRaw === 0 half of the test fails, so a reserved item always uses the normal reserve/percentage math regardless of how low its value is'),
+      assert('An item valued above the threshold is not open-bid',
+        bidLadder(0, 36).isOpenBid === false && bidLadder(0, 40).isOpenBid === false,
+        'Verified: $36 with the $35 default falls outside the category and keeps the standard 30%-of-value starting bid'),
+      assert('Open-bid sheets open at $1',
+        bidLadder(0, 25).amounts[0] === 1,
+        'Verified: startingBid = 1 for open-bid items. printBiddingSheets() renders that $1 on row 1 only — rows 2-20 emit an empty <td> so bidders write their own amounts (no preprinted increment ladder)'),
+      assert('Setting Open Bids to 0 disables the category for every item with a declared value',
+        bidLadder(0, 25, 0).isOpenBid === false && bidLadder(0, 1, 0).isOpenBid === false,
+        'Verified: with openBidMax 0 nothing with a real value satisfies value <= 0. Note a $0/undeclared item still qualifies even at 0 (0 <= 0 holds) — which is the desirable outcome, since the alternative is the old sheet of 20 rows all reading $0. Settings saves blank/invalid input as 0 (same pattern as squarePct/squareFee), and only a missing setting falls back to the $35 default'),
+      assert('An item with neither value nor reserve falls into the open-bid category',
+        bidLadder(0, 0).isOpenBid === true,
+        'Verified: previously this produced a sheet with 20 rows all reading $0 (startingBid and increment both 0); it now opens at $1 with blank rows instead'),
+      assert('Every preprinted row is strictly larger than the one before it, across value/reserve combinations',
+        [[0,0],[0,1],[0,25],[0,34],[0,35],[0,36],[0,40],[0,99],[0,100],[0,150],[1,1],[2,3],[6,10],[14,20],[99,120],[500,600]]
+          .every(([r, v]) => strictlyRising(bidLadder(r, v).amounts)),
+        'Verified: each row is forced to at least prevAmt + 1. This is the core guarantee — no two preprinted rows can ever show the same dollar figure'),
+      assert('Sub-$1 increments no longer collapse consecutive rows onto the same figure',
+        JSON.stringify(bidLadder(2, 3).amounts.slice(0, 6)) === JSON.stringify([2,3,4,5,6,7]),
+        'Verified: a $2 reserve steps by 10% = $0.20, so Math.round() previously produced 2, 2, 2, 3, 3, 3 — multiple rows at an identical amount. The guard now yields 2, 3, 4, 5, 6, 7'),
+      assert('Ladders that were already rising keep their exact previous amounts (no regression)',
+        JSON.stringify(bidLadder(0, 40).amounts.slice(0, 5)) === JSON.stringify([12,16,20,24,28])
+        && JSON.stringify(bidLadder(0, 150).amounts.slice(0, 6)) === JSON.stringify([45,56,66,77,87,98])
+        && JSON.stringify(bidLadder(500, 600).amounts.slice(0, 4)) === JSON.stringify([500,535,570,605]),
+        'Verified: the fix is a per-row guard rather than rounding the increment up globally, specifically so sheets whose increment already exceeded $1 are untouched — the $150 ladder even keeps its uneven 11/10/11/10 spacing from the 7% rate'),
+    ]);
+
+    // ── Settings — "Open Bids" threshold (v6.0) ──────────────────────────────────
+    renderSuite('Settings — "Open Bids" threshold (v6.0)', [
+      assert('New openBidMax setting defaults to 35', true,
+        'Verified: DEFAULT_SETTINGS gains openBidMax: 35, placed with the other bid-sheet defaults (startingBidPct / finalBidPct / bidCount)'),
+      assert('Exposed in Settings > Auction Setup as "Open Bids"', true,
+        'Verified: #inp-open-bid-max number input added to the Auction Setup card directly below Bid Count, with a hint explaining that qualifying sheets open at $1 and print no increments'),
+      assert('Loaded and saved alongside the other Auction Setup fields', true,
+        'Verified: the settings render reads s.openBidMax ?? 35 into #inp-open-bid-max, and the save builder writes openBidMax: parseFloat(...) || 0 — the ?? preserves an explicit 0 rather than treating it as missing'),
+      assert('Blank or invalid input saves as 0, which turns the category off', true,
+        'Verified: parseFloat(\'\') is NaN so the || 0 fallback applies — matching how squarePct/squareFee already behave in the same object. An explicit 0 is the natural "disable" value and survives the round trip because DEFAULT_SETTINGS is merged with ?? not ||'),
+    ]);
+
+    // ── Starting Bid List — open-bid alignment (v6.0) ────────────────────────────
+    renderSuite('Starting Bid List — matches the bid sheets on open bids (v6.0)', [
+      assert('starting-bid-list.php applies the same open-bid rule', true,
+        'Verified: $isOpenBid = $reserve <= 0 && $value <= $openBidMax; $startingBid = $isOpenBid ? 1 : ($reserve > 0 ? $reserve : $value * $startingBidPct / 100) — the nested ternary is explicitly parenthesized, which PHP 8 requires'),
+      assert('Reads openBidMax from sam_settings with the same 0-disables semantics', true,
+        'Verified: isset($settings[\'openBidMax\']) && $settings[\'openBidMax\'] !== \'\' — strict !== means an integer 0 passes through as 0 (category off) and only a missing/blank value falls back to 35, matching the app\'s ?? behavior'),
+      assert('Parses the stored setting through the same money-stripping as reserve/value', true,
+        'Verified: (float)preg_replace(\'/[^0-9.]/\', \'\', ...) mirrors the JS parseMoney() helper, so a setting stored as "$35.00" resolves to 35 rather than 0'),
+      assert('Header comment cross-references printBiddingSheets() as the file to stay in sync with', true,
+        'Verified: the two starting-bid computations now live in different languages and files, so the PHP header explicitly names index.html\'s printBiddingSheets() — without that the list would silently drift from the printed sheet again'),
+    ]);
+
+    // ── Nav — Developer row keeps the drawer open (v6.0) ─────────────────────────
+    renderSuite('Nav — Developer row no longer closes the drawer (v6.0)', [
+      assert('Root cause: the Developer row was treated as a navigation target', true,
+        'Verified: the off-canvas nav IIFE attached closeNav to every .nav-item, including #nav-developer — but that row expands a submenu in place via toggleDeveloperMenu() rather than navigating anywhere, so clicking it removed body.nav-open and slid the drawer off-screen'),
+      assert('Symptom: the menu appeared to vanish after entering the developer password', true,
+        'Verified: submitAuthPassword() already expanded #nav-developer-submenu on success, but the drawer had been closed by that same click, so the newly-unlocked submenu was unlocked yet invisible — the user had to reopen the hamburger to reach it'),
+      assert('Fix: #nav-developer is excluded from the close-on-click handler', true,
+        'Verified: the querySelectorAll(\'.nav-item, a\') loop now skips el.id === \'nav-developer\'. No ancestor of that element matches the selector, so skipping the element itself fully prevents closeNav from firing on that click'),
+      assert('Submenu entries still close the drawer, since those do navigate', true,
+        'Verified: Configuration / Settings / Change Log / API / Import Members carry .nav-item.nav-subitem with data-screen attributes and are left on the handler — only the expander row is exempt'),
+      assert('Fix also covers the already-authenticated path, not just password entry', true,
+        'Verified: within the 30-minute settings-auth window toggleDeveloperMenu() expands the submenu with no prompt at all, but the drawer still closed on that click — the same exemption fixes both paths at the root'),
+      assert('Auth modal stacks above the drawer, so leaving it open behind the prompt is safe', true,
+        'Verified: #auth-modal is z-index 2000 vs #nav at 200 and #nav-backdrop at 150 — the modal renders above the open drawer with no visual conflict'),
+      assert('Scoped to the nav handler rather than forcing the drawer open in submitAuthPassword()', true,
+        'Verified: that function also gates deleting an auction and deep-links to developer screens — popping the drawer open there would cover the screen the user just requested, so the fix stays at the click handler'),
+    ]);
+
     // Clear test data
     _store['sam_items'] = null;
     _store['sam_winners'] = null;

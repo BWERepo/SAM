@@ -1,9 +1,12 @@
 <?php
 // Standalone "Starting Bid List" page — bookmarkable URL, no login required
 // (same pattern as add-item.php). Read-only: lists every donated item with
-// its starting bid, computed the same way as the app's bid sheets —
-// Reserve Amount if set and non-zero, otherwise Item Value x Starting Bid %
-// (Settings > Bid Sheet Defaults).
+// its starting bid, computed the same way as the app's bid sheets:
+//   - Open-bid item (no reserve AND value <= Settings > Open Bids): $1
+//   - Otherwise Reserve Amount if set and non-zero
+//   - Otherwise Item Value x Starting Bid % (Settings > Auction Setup)
+// Keep this in sync with printBiddingSheets() in index.html — the two must
+// agree or the printed sheet will contradict this list.
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
@@ -57,6 +60,12 @@ $items = json_decode((string)$rawItems->fetchColumn(), true) ?: [];
 $rawSettings = $pdo->query("SELECT `value` FROM sam_store WHERE `key` = 'sam_settings' LIMIT 1")->fetchColumn();
 $settings = $rawSettings ? (json_decode($rawSettings, true) ?: []) : [];
 $startingBidPct = isset($settings['startingBidPct']) && $settings['startingBidPct'] !== '' ? (float)$settings['startingBidPct'] : 30;
+// Max declared value (reserve unset) that still counts as an open-bid item.
+// An explicit 0 disables the category, matching the app; only a missing/blank
+// setting falls back to the $35 default.
+$openBidMax = isset($settings['openBidMax']) && $settings['openBidMax'] !== ''
+    ? (float)preg_replace('/[^0-9.]/', '', (string)$settings['openBidMax'])
+    : 35;
 
 function sbl_money($n) {
     return '$' . number_format((float)$n, 0);
@@ -111,7 +120,9 @@ usort($items, fn($a, $b) => strnatcasecmp((string)($a['item_number'] ?? ''), (st
 <?php foreach ($items as $item):
     $reserve = (float)preg_replace('/[^0-9.]/', '', (string)($item['reserve_amount'] ?? '0'));
     $value   = (float)preg_replace('/[^0-9.]/', '', (string)($item['item_value'] ?? ($item['value'] ?? '0')));
-    $startingBid = $reserve > 0 ? $reserve : ($value * $startingBidPct / 100);
+    // Open-bid items open at $1 flat — see the header comment above.
+    $isOpenBid = $reserve <= 0 && $value <= $openBidMax;
+    $startingBid = $isOpenBid ? 1 : ($reserve > 0 ? $reserve : ($value * $startingBidPct / 100));
     $catCode = (string)($item['category_code'] ?? '');
     $catName = $item['category_name'] ?? ($CATEGORIES[$catCode] ?? '');
 ?>
