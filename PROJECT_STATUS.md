@@ -1,6 +1,6 @@
 # SAM Project Status
 
-**Last updated:** 2026-08-16 — **checkpoint v5.4**: investigated a Home-screen metrics mismatch (Bidders tile stale vs. Registrations table; "Paid & Picked Up" counting orphaned payment records left over from a winners reset — explained, no code change needed since a "Clear Pickup & Pay" Developer Tools button already existed), then added zoom in/out controls to the Donated Items table. `test.html` updated, confirmed green by the user, checkpointed (minor version bump, committed, pushed).
+**Last updated:** 2026-08-27 — **checkpoint v6.0** (major bump, user-requested): added an **Open Bids** category (low-value items with no reserve get a $1 opening bid and no preprinted increments), guaranteed every preprinted bid row is **strictly larger than the previous one**, aligned `starting-bid-list.php` with the new bid math, and fixed two real UI bugs (Home Auctions panel needing a hard refresh after login; the Developer nav row closing the drawer out from under its own submenu). `test.html` updated, confirmed green by the user, checkpointed.
 
 This file exists so a brand-new Claude Code session can resume this work with zero prior conversation context. Read this alongside `CLAUDE.md` (architecture/rules) before touching code.
 
@@ -8,9 +8,9 @@ This file exists so a brand-new Claude Code session can resume this work with ze
 
 ## Current state (as of this doc)
 
-- **Deployed version:** **v5.4** (`index.html` footer `#app-version`) — deployed code matches the latest checkpoint commit, no drift.
-- **Git:** `main` branch, last commit `57f1957` ("Checkpoint v5.4: Donated Items table zoom in/out controls"), pushed to `origin` (https://github.com/ETCCRepo/ETCCSAM.git). Working tree is clean.
-- **Regression suite (`test.html`) was updated this session and confirmed green by the user** before the v5.4 checkpoint.
+- **Deployed version:** **v6.0** (`index.html` footer `#app-version`) — deployed code matches the latest checkpoint commit, no drift. Major bump was explicitly requested by the user (`/ETCCSAMCheckpoint v6.0`), reached via `.\bump-version.ps1 -Major` from v5.4.
+- **Git:** `main` branch, last commit `7f31481` ("Checkpoint v6.0: Open Bids category, rising bid ladder, login and nav fixes"), pushed to `origin` (https://github.com/ETCCRepo/ETCCSAM.git). Working tree is clean.
+- **Regression suite (`test.html`) was updated this session and confirmed green by the user** before the v6.0 checkpoint.
 - **No uncommitted app-code work** as of this doc.
 
 ### ⚠️ Open items carried into the next session
@@ -20,8 +20,94 @@ This file exists so a brand-new Claude Code session can resume this work with ze
 3. **The Gmail-scan workflow's UI is hidden (`display:none`), not deleted**, and a large amount of supporting JS (OAuth token handling, inbox scanning, `parseEmailBody()`/`DEFAULT_FIELD_MAP`-driven parsing) remains in `index.html`, unreferenced by any visible UI. It couldn't be fully removed because the **Gmail OAuth Settings card is still load-bearing** — it configures the same Gmail API connection used by the currently-working **Announce Winners → Email Winners** feature (`sendWinnerEmails()` → `sendEmailsViaGmail()`). A future session could cleanly split "Gmail auth for sending" from "Gmail scanning for inbox import" if the scanning code is ever confirmed permanently dead.
 4. **`donate-item.php` remains fully removed** (unchanged from prior sessions) — `add-item.php` is the only item-donation entry point. Its old SQL-side backend (`donated_items_pending` table, `get_pending_donations`/`mark_donations_imported` in `api.php`) is still there, unused, per the same convention.
 5. **`starting-bid-list.php` has no password gate**, matching `add-item.php`'s convention — anyone with the URL can view the full donated-items list with donor names and starting bids. This was not explicitly discussed as a security tradeoff; flag it if the club raises privacy concerns about donor names being publicly listable.
-6. **A near-duplicate of `add-item.php` was created and fully removed in the v5.1 session** (`silent-auction-form.php` — see that session's write-up below). If a future request sounds like "make a public version of the item donation form without the member picker," check this history first rather than rebuilding from scratch, since the exact diff needed (remove `etccMemberName`/`memberEmail` from validation, DB write, confirmation email, and the HTML form/JS) is already documented below.
-7. **The "Bidders: 17 vs. 25" Home/Registrations mismatch (v5.4 session) was explained but not confirmed fixed.** The user was asked to hard-refresh and re-compare Home vs. the Registrations screen; no confirmation came back before that session ended. If raised again, check whether it's simply the "Home tile only refreshes on `navigate('home')`" staleness, or genuine sync drift between localStorage and the MySQL backend (`[[project_data_sync_architecture]]`) — don't assume it's resolved. See the v5.4 write-up below for the full diagnosis.
+6. **⚠️ The starting-bid calculation now exists in TWO places that must be kept in sync** (new in v6.0): `printBiddingSheets()` in `index.html` (JS) and `starting-bid-list.php` (PHP). Both implement the same three-branch rule — open-bid → $1, else reserve if set, else value × Starting Bid %. A comment at the top of the PHP file cross-references the JS function. **If you change the bid math, change both**, or the printed sheet will silently contradict the Starting Bid List — which is exactly the drift the v6.0 session had to correct.
+7. **PHP files cannot be syntax-checked locally** — `php` is not on PATH in this environment (`php -l` fails with "command not found"). Edits to `starting-bid-list.php` / `add-item.php` / `api.php` are verified by inspection only, then confirmed by loading the live page. Be especially careful with PHP 8 rules that older PHP tolerated — e.g. **nested ternaries must be explicitly parenthesized** or the file fatals on load.
+8. **A near-duplicate of `add-item.php` was created and fully removed in the v5.1 session** (`silent-auction-form.php` — see that session's write-up below). If a future request sounds like "make a public version of the item donation form without the member picker," check this history first rather than rebuilding from scratch, since the exact diff needed (remove `etccMemberName`/`memberEmail` from validation, DB write, confirmation email, and the HTML form/JS) is already documented below.
+9. **The "Bidders: 17 vs. 25" Home/Registrations mismatch (v5.4 session) was explained but not confirmed fixed.** The user was asked to hard-refresh and re-compare Home vs. the Registrations screen; no confirmation came back before that session ended. If raised again, check whether it's simply the "Home tile only refreshes on `navigate('home')`" staleness, or genuine sync drift between localStorage and the MySQL backend (`[[project_data_sync_architecture]]`) — don't assume it's resolved. See the v5.4 write-up below for the full diagnosis.
+
+---
+
+## What was accomplished this session (checkpoint v6.0)
+
+Four independent threads, all driven by the user reviewing the live app and reporting what they saw. Two were new bid-sheet requirements; two were real UI bugs. Everything landed in one v6.0 checkpoint.
+
+### 1. Real bug — Home Auctions panel empty until a hard refresh
+**Symptom reported:** logging in at https://etccapps.com/apps/sam/ showed a splash screen with no data ("No auctions yet"), and only `Ctrl+Shift+R` followed by re-entering the password produced the real screen. The user noted their other apps don't behave this way. The console screenshot showed several `401` responses from `api.php` plus `get_all: Unauthorized`.
+
+**Root cause (a render-ordering bug, not an auth bug):** the top-level `init()` IIFE in `index.html` calls `updateHomeAuctionPanel()` / `renderAuctionsList()` unconditionally at page load. At that moment the user is not yet logged in, and `get_all` is deliberately **not** in `api.php`'s `$publicActions` list, so it correctly returns 401 and the panel renders against empty data. On a successful password entry, `initializePasswordScreen()`'s `checkPassword()` *did* re-sync the real data via `syncFromKeyValueDB()` — but then only called `refreshHomeMetrics()`, which repaints the four small stat tiles and **nothing else**. The auctions panel/list was never re-rendered, so it stayed stuck on its pre-login empty render. A hard refresh "fixed" it only because by then the PHP session cookie was already valid, letting the *pre-login* boot fetch succeed on that second load. The 401s in the console were therefore expected/by-design, not the fault.
+
+**Fix:** both login success paths now call `updateHomeAuctionPanel()` and `renderAuctionsList()` immediately after the post-login `syncFromKeyValueDB()` / `refreshHomeMetrics()` — `checkPassword()` (normal password screen) and the maintenance-screen `submit()` handler. Display layer only; no auth/session logic touched. Both functions are pure re-renders already called elsewhere (`archiveAuction()`, `openAuction()`), so calling them again is idempotent.
+
+### 2. New feature — "Open Bids" category on bid sheets
+**Request:** support two types of bid sheet based on the item's value *when no reserve is specified*. New setting **"Open Bids"** = the maximum declared value that counts as open-bid, default **$35.00**. Open-bid items get a $1 starting bid and no bid increments; every other item's sheet is unchanged.
+
+**Design decision made by the user** (asked explicitly, since it changes a physical printout): of three options for the Bid Amount column, the user chose **"first row shows $1, rows 2-20 blank."** Not a blank column with a "Starting Bid: $1" header box, and not all 20 rows reading $1. Nothing else on the sheet changed — no extra info box was added.
+
+**Implementation, all in `index.html`:**
+- `DEFAULT_SETTINGS` gains `openBidMax: 35`, grouped with the other bid-sheet defaults.
+- Settings → **Auction Setup** card gains `#inp-open-bid-max`, directly below Bid Count.
+- Settings load reads `s.openBidMax ?? 35`; the save builder writes `openBidMax: parseFloat(...) || 0`. The `??` (not `||`) matters — it preserves an explicit `0`.
+- `printBiddingSheets()`: `const isOpenBid = reserveRaw === 0 && itemValueRaw <= openBidMax;` → `startingBid = 1`, `incrementAmount = 0`, and the row renderer emits an empty `<td>` for `idx > 0`.
+
+**Semantics worth knowing:**
+- An item **with** a reserve is never open-bid, no matter how low its value.
+- The threshold is **inclusive** ($35 exactly still qualifies at the default).
+- **Setting Open Bids to 0 disables the category** for anything with a declared value. Blank/invalid input also saves as 0, matching how `squarePct`/`squareFee` already behave.
+- An item with **neither value nor reserve** falls into the open-bid category. This is a strict improvement — previously such an item produced a sheet with 20 rows all reading `$0`.
+
+### 3. `starting-bid-list.php` aligned with the new bid math
+The standalone Starting Bid List computes its own starting bid in PHP and would have kept showing 30%-of-value for open-bid items, contradicting the printed sheet. On the user's go-ahead it now applies the identical rule:
+```php
+$isOpenBid = $reserve <= 0 && $value <= $openBidMax;
+$startingBid = $isOpenBid ? 1 : ($reserve > 0 ? $reserve : ($value * $startingBidPct / 100));
+```
+- `$openBidMax` is read from `sam_settings` using `isset(...) && ... !== ''` — the strict `!==` lets an integer `0` through as "disabled", matching the JS `??` behavior, while a missing/blank value falls back to 35.
+- Parsed via `(float)preg_replace('/[^0-9.]/', '', ...)`, mirroring the JS `parseMoney()` helper, so a setting stored as `"$35.00"` resolves to 35 rather than 0.
+- **The nested ternary is deliberately parenthesized** — PHP 8 fatals on unparenthesized nested ternaries, and this file could not be linted locally (no `php` on PATH; see open item #7).
+- A header comment now names `printBiddingSheets()` as the function this must stay in sync with. See open item #6 — this is now a two-implementation rule.
+
+### 4. Real bug — preprinted bid rows could repeat the same amount
+**Request:** "make sure every preprinted bid row is larger than the previous row."
+
+**Root cause:** amounts were built as `Math.round(startingBid + i * incrementAmount)`. When the increment rounded to under $1, consecutive rows collapsed onto the same dollar figure — e.g. a **$2 reserve** steps by 10% = $0.20 and printed `2, 2, 2, 3, 3, 3…`. Only reachable for low-value reserved items (unreserved low-value items are now open-bid and print blank rows anyway).
+
+**Fix:** a per-row guard — `if (prevAmt !== null && amt <= prevAmt) amt = prevAmt + 1;`. Chosen deliberately **over** rounding the increment up globally (`Math.max(1, Math.round(inc))`), because the guard leaves already-correct ladders byte-identical. Verified: `$40 → 12,16,20,24,28`, `$150 → 45,56,66,77,87,98` (keeps its uneven 11/10 spacing from the 7% rate), `$500 reserve → 500,535,570,605` — all unchanged. Only genuinely broken ladders shift (`$2 reserve → 2,3,4,5,6,7`).
+
+### 5. Real bug — Developer nav row closed the drawer out from under its own submenu
+**Request:** "when the developer password is validated, show the menu bar on the left."
+
+**Root cause:** the off-canvas nav IIFE attached `closeNav` to **every** `.nav-item` — including `#nav-developer`. But that row doesn't navigate anywhere; `toggleDeveloperMenu()` expands `#nav-developer-submenu` *in place*. So clicking it removed `body.nav-open` and slid the drawer off-screen, while `submitAuthPassword()` dutifully expanded the submenu inside the now-hidden drawer. The menu was working the whole time — it was just off-screen.
+
+**Fix:** exempt `#nav-developer` from that handler (`if (el.id === 'nav-developer') return;`). No ancestor of that element matches the `.nav-item, a` selector, so skipping the element itself fully suppresses the close. Submenu entries (Configuration / Settings / Change Log / API / Import Members) still close the drawer, since those *are* real navigation targets.
+
+**Two deliberate scoping choices:** (a) this also fixes the **already-authenticated** path — within the 30-minute settings-auth window the drawer used to close with no password prompt to blame; (b) the fix lives in the nav click handler rather than forcing the drawer open inside `submitAuthPassword()`, because that function *also* gates deleting an auction and deep-links to developer screens, where popping the drawer open would cover the screen the user just asked for. Verified safe: `#auth-modal` is z-index 2000 vs `#nav` at 200 and `#nav-backdrop` at 150, so the modal renders cleanly above an open drawer.
+
+### 6. `test.html` updated, confirmed green
+Four new suites (24 assertions), plus the login-fix suite relabeled from v5.4 to v6.0 (a v5.4 checkpoint landed from a different session mid-stream, so the original label would have been wrong).
+
+The bid-sheet suite is **genuinely executable**, not documentation-style: it carries a local `bidLadder()` mirror of `printBiddingSheets()`'s arithmetic (copied rather than imported, since the real function builds an entire print document via `openPrintWindow()`) and asserts against real computed output — open-bid detection, the $1 opening bid, strict monotonicity across 16 value/reserve combinations, the sub-$1 collapse fix, and a no-regression check pinning the $40/$150/$500 ladders to their exact prior amounts.
+
+**That paid off immediately:** it caught a false assertion in the tests themselves. The claim "Open Bids = 0 disables the category entirely" is wrong — a $0/undeclared item still qualifies at 0, because `0 <= 0` holds. The assertion was corrected to "…for every item with a declared value" rather than the behavior being changed, since a $0 item landing in the open-bid category is the desirable outcome (it's what avoids the old all-`$0` sheet).
+
+### 7. Checkpoint v6.0 (major bump, user-requested)
+Invoked as `/ETCCSAMCheckpoint v6.0`. Current version was **v5.4** (not v5.3 — a "Donated Items table zoom" checkpoint had landed from a separate session in between), so `.\bump-version.ps1 -Major` reached exactly v6.0. All `deploy.ps1` calls succeeded first try this session, including the `.php` file.
+
+### Files touched this session
+| File | Status | Notes |
+|---|---|---|
+| `index.html` | committed (`7f31481`) | Login re-render fix (2 paths); Open Bids setting (`DEFAULT_SETTINGS` + Auction Setup UI + load/save); `printBiddingSheets()` open-bid branch and strictly-rising ladder guard; `#nav-developer` exempted from the drawer-close handler; version bump to v6.0 |
+| `starting-bid-list.php` | committed (`7f31481`) | Open-bid rule mirrored from the JS; `$openBidMax` read from `sam_settings` with 0-disables semantics; header comment cross-referencing `printBiddingSheets()` |
+| `test.html` | committed (`7f31481`) | 4 new suites / 24 assertions (executable bid-ladder tests + Open Bids settings, Starting Bid List alignment, nav drawer); login suite relabeled v5.4 → v6.0. Confirmed green by the user before the checkpoint. |
+| `PROJECT_STATUS.md` | this file, being committed now | continuity doc, not app code |
+
+---
+
+## What was accomplished in the v5.2 / v5.3 sessions (Donated Items table layout)
+
+These two checkpoints never got their own write-up (the `/ETCCSAMEnd` run that would have covered them didn't happen before the v5.4 session took over the doc). Recorded briefly here so the version history has no gap — all of it is layout-only work on the Step 1 Donated Items table (`#items-table` in `index.html`):
+
+- **v5.2** — rebalanced column widths after long donor addresses from `add-item.php` made the table read badly: Description widened 360px → 660px, and Value / Reserve / Donor Name / Donor Email narrowed (90→70, 90→70, 260→180, 260→200). Table `min-width` tracked the changes.
+- **v5.3** — increased the table's scroll container from `max-height:258px` to `600px` so roughly 15+ rows are visible before scrolling starts. Same checkpoint also carried a pending `starting-bid-list.php` fix that had been sitting uncommitted: `white-space:nowrap` on Category/Donor Name was letting long content push past their intended share and squeeze Description, so that table moved to a fixed `<colgroup>` (Item # 7%, Category 24%, Starting Bid 8%, Donor Name 14%, Description 47%) with wrapping, and the card widened 700px → 900px.
 
 ---
 
