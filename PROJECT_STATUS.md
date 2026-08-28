@@ -1,6 +1,6 @@
 # SAM Project Status
 
-**Last updated:** 2026-08-28, later same-day — **checkpoint v6.5**: fixed the standalone Items Not Won report's Item # and Donor Phone columns wrapping onto two lines (`white-space:nowrap`). Small, single-topic follow-up on top of the same-day v6.1→v6.4 arc below, which is still the important read — it restated the entire bid sheet algorithm around **OPEN vs. PREMIUM auctions** (decided by Item Value alone, after a mid-session detour where reserve briefly decided membership and had to be reversed following a real bug), gave every bid sheet a fully fixed-height layout, removed the Row Height and Date Loaded columns from Create Bid Sheets, added an iOS `apple-touch-icon`, and fixed two donor-name overflow / table-height bugs found by the user reviewing live screens. **Read the "Bid sheet algorithm" note in open item #6 below before touching `printBiddingSheets()` or `starting-bid-list.php` again — the rule changed twice in one session and the final version is easy to get wrong from memory.**
+**Last updated:** 2026-08-28, later same-day — **checkpoint v6.6**: Donated Items' row-editing UX was reworked — double-clicking a row now opens a standalone **Edit Item modal** (Save/Cancel, matching `#bidder-edit-modal`'s pattern) instead of in-row inline editing, and the table's **Actions column (View/Edit buttons) was removed entirely**, since double-click is now the only way to edit. The old in-row edit functions are flagged orphaned, not deleted. This caps a long same-day arc (v6.1→v6.6) — the important background read is still the v6.1→v6.4 write-up below, which restated the entire bid sheet algorithm around **OPEN vs. PREMIUM auctions** (decided by Item Value alone, after a mid-session detour where reserve briefly decided membership and had to be reversed following a real bug). **Read the "Bid sheet algorithm" note in open item #6 below before touching `printBiddingSheets()` or `starting-bid-list.php` again — the rule changed twice in one session and the final version is easy to get wrong from memory.**
 
 This file exists so a brand-new Claude Code session can resume this work with zero prior conversation context. Read this alongside `CLAUDE.md` (architecture/rules) before touching code.
 
@@ -8,11 +8,12 @@ This file exists so a brand-new Claude Code session can resume this work with ze
 
 ## Current state (as of this doc)
 
-- **Deployed version:** **v6.5** (`index.html` footer `#app-version`) — deployed code matches the latest checkpoint commit, no drift.
-- **Git:** `main` branch, last commit `7636b2c` ("Checkpoint v6.5: Items Not Won report - Item # / Donor Phone stay on one line"), pushed to `origin` (https://github.com/ETCCRepo/ETCCSAM.git). Working tree is clean.
-- **Regression suite (`test.html`) was updated at every checkpoint this session (v6.1 through v6.5) and confirmed green by the user** before each one.
+- **Deployed version:** **v6.6** (`index.html` footer `#app-version`) — deployed code matches the latest checkpoint commit, no drift.
+- **Git:** `main` branch, last commit `b3b80a7` ("Checkpoint v6.6: Donated Items - double-click edit modal, Actions column removed"), pushed to `origin` (https://github.com/ETCCRepo/ETCCSAM.git). Working tree is clean.
+- **Regression suite (`test.html`) was updated at every checkpoint this session (v6.1 through v6.6) and confirmed green by the user** before each one.
 - **No uncommitted app-code work** as of this doc.
 - **Note on version bumping earlier in this session:** `/ETCCSAMCheckpoint v6.0` (an explicit version argument) was correctly interpreted as a requested major bump earlier in this multi-day arc. Later in this session, `/ETCCSAMCheckpoint` (no argument) was run and a major bump to v7.0 was applied by mistake — the assistant caught it, reverted to v6.3 (correct minor bump from v6.2) before committing, and no v7.0 was ever pushed or deployed. Worth knowing only because it means version history has no v7.0 gap to explain if noticed later — it never left the working tree.
+- **New in v6.6:** the Donated Items table's Edit workflow changed shape — see open item #12 below before assuming the old in-row Edit button/`editItemByNumber()` path is still live. It isn't.
 
 ### ⚠️ Open items carried into the next session
 
@@ -27,6 +28,47 @@ This file exists so a brand-new Claude Code session can resume this work with ze
 9. **The "Bidders: 17 vs. 25" Home/Registrations mismatch (v5.4 session) was explained but never confirmed fixed.** Not touched again this session — still open if it resurfaces.
 10. **Bid sheet row height is now `BID_SHEET_ROW_HEIGHT_IN = 0.40` in `printBiddingSheets()`**, a hardcoded JS constant with no UI to change it (the v3.1-era per-item override column and toolbar control were both removed this session). If a future request wants it configurable again, that's new work, not a revert — the old mechanism (`updateItemRowHeight()`, `#bs-row-height-input`, the per-item cascade-on-change logic) no longer exists in the codebase at all, only in git history.
 11. **Two donor-name overflow bugs and one table-height bug were found by the user reviewing live screens this session** (not from code review) — worth remembering that pattern: `#items-table`'s fix didn't automatically cover `#bs-items-table` because they have entirely separate row-rendering functions (`refreshItemsTable()` vs. `refreshBsItemsTable()`), and the Registrations table's `calc(100vh - 388px)` was a silent outlier compared to every sibling screen's `calc(100vh - 278px)`. If another table shows a similar overflow or excessive-whitespace symptom, check for this same "fix applied to one twin table but not the other" pattern first.
+12. **⚠️ Donated Items row editing changed shape in v6.6 — the old in-row Edit button is gone.** Double-clicking a row now opens `#item-edit-modal` (`openItemEditModal()`/`saveItemEditModal()`/`closeItemEditModal()`, all in `index.html`). The Actions column (View/Edit buttons) was removed from `#items-table` entirely. The **old in-row editor is flagged ORPHANED, not deleted** — `ITEM_EDIT_COLS_MAIN`, `rowCheckboxOffset()`, `editItemByNumber()`, `saveItemEdit()`, `cancelItemEdit()` all still exist (with a comment block explaining why, right above `ITEM_EDIT_COLS_MAIN`) but have **no live callers** as of this doc. Do not assume `editItemByNumber()` is reachable from the UI — it isn't. If reviving in-row editing is ever requested, that code is still there to resurrect; if extending item-editing, extend `saveItemEditModal()` instead. Note also that the modal's rename-a-winner-record-when-Item-#-changes handling is new in v6.6 and does **not** exist in the orphaned `saveItemEdit()`, in case that old code path is ever revived without noticing the gap.
+
+---
+
+## What was accomplished this session (checkpoint v6.6)
+
+Two-part follow-up in the same day as v6.5 below — a new interaction pattern requested by the user (double-click to edit), then a cleanup request that removed the UI it replaced.
+
+### 1. New feature — double-click a Donated Items row opens an Edit Item modal
+**First request:** "double clicking a row should open editing" — implemented initially as attaching a double-click handler that called the existing in-row `editItemByNumber()` (same as the Edit button, just triggered by a dblclick instead of a click).
+
+**Follow-up request, same turn:** "open editing form in a modular page with save and cancel" — this meant a proper modal, not in-row inline editing. Built `#item-edit-modal` (`index.html`, inserted at the end of the Step 1 `screen-item-load` section, right before its closing `</section>`) modeled directly on the existing `#bidder-edit-modal` pattern:
+- Fields: Item #, Category (`<select>` built from the global `CATEGORIES` map), Submission Date, Description (`<textarea>`), Item Value, Reserve Amount, Donor Name (`<textarea>`), Donor Email (`<textarea>`), Donor Phone.
+- `openItemEditModal(itemNumber)` populates every field and stores the original item number on `modal.dataset.originalItemNumber` (so a rename mid-edit doesn't break the save lookup).
+- `saveItemEditModal()` writes all fields back, sets `source = 'Edited'`, and — **a real improvement over the old in-row editor, which never had this** — if the Item # was changed and a winner record exists under the old number, it's copied to the new key and the old key deleted, so renaming an item no longer silently orphans a recorded win.
+- `closeItemEditModal()` is a plain hide, no side effects (Cancel behavior).
+- The double-click listener (attached per-row in `refreshItemsTable()`) skips read-only mode, and bails via `e.target.closest('input, button, select, textarea, a')` so clicking the row's checkbox or (at the time) the Edit/View buttons didn't also fire the modal.
+
+**Follow-up sizing request:** a screenshot of the modal in use showed the Description box looking cramped relative to real donation descriptions — bumped `#edit-item-description` from `rows="3"` to `rows="8"` to match.
+
+### 2. Removed — the Actions column (View/Edit buttons) from Donated Items
+Once double-click became the primary edit path, the user asked to remove the Actions column and its buttons entirely. Removed:
+- `<th>Actions</th>`, its `<col style="width:200px;">`, and the row template's trailing `<td>` (View + Edit buttons) from `#items-table`.
+- Table `min-width` recalculated 1986px → 1786px (verified against the sum of the 11 remaining column widths); empty-state colspan 12 → 11.
+- `emailIdx`/`EMAIL_ICON`, which existed solely to feed the removed View button — deleted outright as genuinely dead loop-local code, not flagged (there's nothing standalone worth preserving there, unlike a whole function).
+
+**Orphaned, not deleted** (per the project's standing convention): `ITEM_EDIT_COLS_MAIN`, `rowCheckboxOffset()`, `editItemByNumber()`, `saveItemEdit()`, `cancelItemEdit()` — the whole in-row-edit cluster lost its only caller. Left in place with an explicit `ORPHANED` comment block above `ITEM_EDIT_COLS_MAIN` naming the cluster, explaining why, pointing at the replacement, and flagging that `ITEM_EDIT_COLS_MAIN`'s `actions:10` index is now stale (the column it pointed at no longer exists) in case this code is ever revived without updating it first.
+
+**Checked, needed no change:** `showEmailModal()` itself is still called from the separate Email inbox table's own View button — only the Donated Items call site was removed. The View All modal clones `#items-table`'s thead/tbody dynamically with no hardcoded column-count assumption, so it picked up the Actions-column removal automatically.
+
+### 3. `test.html` updated, confirmed green
+Three new suites: the modal itself (8 assertions — population, field types, save/rename-carries-winner/empty-Item#-rejected, cancel), the Actions-column removal (5 assertions), and the orphaned-code flagging (3 assertions).
+
+### 4. Checkpoint v6.6 (minor version bump)
+Straightforward minor bump from v6.5 via `.\bump-version.ps1` (no `-Major` requested).
+
+### Files touched this session
+| File | Status | Notes |
+|---|---|---|
+| `index.html` | committed (`b3b80a7`) | `#item-edit-modal` + `openItemEditModal()`/`saveItemEditModal()`/`closeItemEditModal()`; double-click listener in `refreshItemsTable()`; Actions column removed (header/colgroup/row/colspan/min-width); `emailIdx`/`EMAIL_ICON` deleted; in-row-edit cluster flagged orphaned; version bump to v6.6 |
+| `test.html` | committed (`b3b80a7`) | 3 new suites / 16 assertions. Confirmed green by the user. |
 
 ---
 
