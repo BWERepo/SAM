@@ -21,8 +21,8 @@
        Screen") — it only looks at apple-touch-icon. Kept in sync with the same
        Club Branding favicon by updateFavicon() below. -->
   <link rel="apple-touch-icon" id="apple-touch-icon-link" href="Images/ETCClogoWhiteBackground.png" />
-  <link rel="stylesheet" href="css/table.css?v=1787928353" />
-  <link rel="stylesheet" href="css/toolbar.css?v=1787928353" />
+  <link rel="stylesheet" href="css/table.css?v=1787934932" />
+  <link rel="stylesheet" href="css/toolbar.css?v=1787934932" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1098,13 +1098,13 @@
           </div>
         </div>
         <div style="overflow:auto;max-height:600px;" id="items-table-wrap">
-          <table class="tablekit" id="items-table" style="table-layout:fixed;width:100%;min-width:1986px;">
+          <table class="tablekit" id="items-table" style="table-layout:fixed;width:100%;min-width:1786px;">
             <colgroup>
               <col style="width:36px;">
               <col style="width:70px;"><col style="width:150px;">
               <col style="width:80px;"><col style="width:140px;"><col style="width:660px;">
               <col style="width:70px;"><col style="width:70px;"><col style="width:180px;">
-              <col style="width:200px;"><col style="width:130px;"><col style="width:200px;">
+              <col style="width:200px;"><col style="width:130px;">
             </colgroup>
             <thead>
               <tr>
@@ -1119,11 +1119,59 @@
                 <th>Donor Name</th>
                 <th>Donor Email</th>
                 <th>Donor Phone</th>
-                <th style="width:200px;text-align:center;">Actions</th>
               </tr>
             </thead>
             <tbody id="items-tbody"></tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Edit Item Modal (opened by double-clicking a Donated Items row) -->
+      <div id="item-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;">
+        <div style="background:var(--bg);border-radius:12px;padding:24px;width:500px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.25);">
+          <h3 style="margin:0 0 16px;font-size:16px;">Edit Item</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+            <div>
+              <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Item #</label>
+              <input id="edit-item-number" type="text" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-weight:600;background:var(--bg);color:var(--text);">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Category</label>
+              <select id="edit-item-category" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);color:var(--text);"></select>
+            </div>
+            <div style="grid-column:1/-1;">
+              <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Submission Date</label>
+              <input id="edit-item-date" type="text" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+            </div>
+            <div style="grid-column:1/-1;">
+              <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Description</label>
+              <textarea id="edit-item-description" rows="8" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;resize:vertical;"></textarea>
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Item Value</label>
+              <input id="edit-item-value" type="text" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Reserve Amount</label>
+              <input id="edit-item-reserve" type="text" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+            </div>
+            <div style="grid-column:1/-1;">
+              <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Donor Name</label>
+              <textarea id="edit-item-donor-name" rows="2" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;resize:vertical;"></textarea>
+            </div>
+            <div style="grid-column:1/-1;">
+              <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Donor Email</label>
+              <textarea id="edit-item-donor-email" rows="2" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;resize:vertical;"></textarea>
+            </div>
+            <div style="grid-column:1/-1;">
+              <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Donor Phone</label>
+              <input id="edit-item-donor-phone" type="text" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button class="btn" onclick="closeItemEditModal()">Cancel</button>
+            <button class="btn primary workflow-edit-btn" onclick="saveItemEditModal()">Save</button>
+          </div>
         </div>
       </div>
 
@@ -2401,8 +2449,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="js/table.js?v=1787928353"></script>
-<script src="js/toolbar.js?v=1787928353"></script>
+<script src="js/table.js?v=1787934932"></script>
+<script src="js/toolbar.js?v=1787934932"></script>
 <script>
 (function() {
   const _origInit = PageToolbar.init.bind(PageToolbar);
@@ -4003,6 +4051,17 @@ function deleteCheckedItems() {
   persistItemLoadScreenToDB();
 }
 
+// ══════════════════════════════════════
+//  ORPHANED: in-row Edit (ITEM_EDIT_COLS_MAIN / rowCheckboxOffset /
+//  editItemByNumber / saveItemEdit / cancelItemEdit), left in place per the
+//  project's "flag, don't delete" convention. The Actions column (View/Edit
+//  buttons) that called these was removed from #items-table — double-
+//  clicking a row now opens the standalone Edit Item modal
+//  (openItemEditModal()/saveItemEditModal() further below) instead. Nothing
+//  currently calls this block; ITEM_EDIT_COLS_MAIN's `actions:10` index is
+//  also now stale (the Actions column no longer exists at that position).
+// ══════════════════════════════════════
+
 // Column index map for the inline editor. #items-tbody and #view-all-table
 // (which mirrors it) both carry a leading checkbox column now — these indices
 // are the un-shifted (no-checkbox) column positions; `off` below adds 1 when
@@ -4190,6 +4249,79 @@ function cancelItemEdit(itemNumber) {
   refreshItemsTable();
 }
 
+// ══════════════════════════════════════
+//  DONATED ITEMS — Edit Item modal (double-click a row to open)
+//  Separate from the in-row Edit button's editItemByNumber()/saveItemEdit()
+//  above, which stay row-based. This is a standalone modal with Save/Cancel,
+//  matching the pattern of #bidder-edit-modal.
+// ══════════════════════════════════════
+function openItemEditModal(itemNumber) {
+  const item = Items.getAll().find(i => String(i.item_number) === String(itemNumber));
+  if (!item) return;
+  const modal = document.getElementById('item-edit-modal');
+  modal.dataset.originalItemNumber = item.item_number;
+
+  const catSelect = document.getElementById('edit-item-category');
+  catSelect.innerHTML = Object.entries(CATEGORIES).map(([code, name]) =>
+    `<option value="${code}" ${String(item.category_code) === code ? 'selected' : ''}>${code} — ${name}</option>`
+  ).join('');
+
+  document.getElementById('edit-item-number').value      = item.item_number;
+  document.getElementById('edit-item-date').value        = item.email_date || '';
+  document.getElementById('edit-item-description').value = item.description || '';
+  document.getElementById('edit-item-value').value       = item.item_value || item.value || '';
+  document.getElementById('edit-item-reserve').value     = item.reserve_amount || '';
+  document.getElementById('edit-item-donor-name').value  = item.donor_name || '';
+  document.getElementById('edit-item-donor-email').value = item.donor_email || '';
+  document.getElementById('edit-item-donor-phone').value = item.donor_phone || '';
+
+  modal.style.display = 'flex';
+  document.getElementById('edit-item-description').focus();
+}
+
+function closeItemEditModal() {
+  document.getElementById('item-edit-modal').style.display = 'none';
+}
+
+function saveItemEditModal() {
+  const modal = document.getElementById('item-edit-modal');
+  const originalItemNumber = modal.dataset.originalItemNumber;
+  const allItems = Items.getAll();
+  const item = allItems.find(i => String(i.item_number) === String(originalItemNumber));
+  if (!item) { closeItemEditModal(); return; }
+
+  const newItemNumber = document.getElementById('edit-item-number').value.trim();
+  if (!newItemNumber) { alert('Item # is required.'); return; }
+
+  item.item_number    = newItemNumber;
+  item.category_code  = document.getElementById('edit-item-category').value;
+  item.category_name  = CATEGORIES[item.category_code] || item.category_name;
+  item.email_date     = document.getElementById('edit-item-date').value;
+  item.description    = document.getElementById('edit-item-description').value;
+  item.item_value     = document.getElementById('edit-item-value').value;
+  item.reserve_amount = document.getElementById('edit-item-reserve').value;
+  item.donor_name     = document.getElementById('edit-item-donor-name').value;
+  item.donor_email    = document.getElementById('edit-item-donor-email').value;
+  item.donor_phone    = document.getElementById('edit-item-donor-phone').value;
+  item.source         = 'Edited';
+
+  // If the item number was changed, the winner record (if any) is keyed by
+  // the old number — carry it over so a rename doesn't orphan a recorded win.
+  if (newItemNumber !== originalItemNumber) {
+    const winners = DB.getWinners();
+    if (winners[originalItemNumber]) {
+      winners[newItemNumber] = winners[originalItemNumber];
+      delete winners[originalItemNumber];
+      DB.saveWinners(winners);
+    }
+  }
+
+  DB.saveItems(allItems);
+  closeItemEditModal();
+  refreshItemsTable();
+  persistItemLoadScreenToDB();
+}
+
 function deleteItemByNumber(itemNumber) {
   if (!confirm(`Delete item ${itemNumber}?`)) return;
   let items = Items.getAll();
@@ -4212,15 +4344,12 @@ function refreshItemsTable() {
   tbody.innerHTML = '';
 
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:20px;color:var(--text-secondary);">No items loaded yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--text-secondary);">No items loaded yet.</td></tr>';
     return;
   }
 
-  const EMAIL_ICON = `<svg width="14" height="11" viewBox="0 0 14 11" fill="none" stroke="currentColor" stroke-width="1.4" xmlns="http://www.w3.org/2000/svg"><rect x="0.7" y="0.7" width="12.6" height="9.6" rx="1"/><path d="M0.7 2l6.3 4.5L13.3 2"/></svg>`;
-
   items.forEach(item => {
     const catCode  = item.category_code ? 'cat-' + item.category_code : 'cat-900';
-    const emailIdx = scannedEmails.findIndex(e => e.id === item.email_message_id);
     const ro = isReadOnly();
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -4235,11 +4364,19 @@ function refreshItemsTable() {
       <td style="white-space:normal;word-break:break-word;vertical-align:top;">${escHtml(item.donor_name)}</td>
       <td style="white-space:normal;word-break:break-word;vertical-align:top;">${escHtml(item.donor_email)}</td>
       <td>${escHtml(item.donor_phone)}</td>
-      <td style="text-align:center;white-space:nowrap;">
-        ${emailIdx >= 0 ? `<button class="btn" style="padding:3px 10px;margin-right:4px;font-size:11px;" ${ro ? 'disabled' : ''} onclick="showEmailModal(${emailIdx})" title="View email">View</button>` : ''}
-        <button class="btn" style="padding:3px 10px;font-size:11px;" ${ro ? 'disabled' : ''} onclick="editItemByNumber('${escHtml(item.item_number)}')" title="Edit item">Edit</button>
-      </td>
     `;
+    // Double-clicking anywhere on the row opens the standalone Edit Item
+    // modal (Save/Cancel) — now the only way to edit a row, since the
+    // Actions column (View/Edit buttons) was removed. Skip when the row is
+    // read-only, or the double-click landed on an interactive element
+    // (currently just the leading checkbox) that has its own click behavior.
+    if (!ro) {
+      tr.style.cursor = 'pointer';
+      tr.addEventListener('dblclick', (e) => {
+        if (e.target.closest('input, button, select, textarea, a')) return;
+        openItemEditModal(String(item.item_number));
+      });
+    }
     tbody.appendChild(tr);
   });
 
@@ -11072,7 +11209,7 @@ async function testSamApiUrl() {
 <div id="app-footer">
   <div>&copy; 2026 <span id="footer-club-name">${getClub().name}</span> &nbsp;&middot;&nbsp; Knoxville, TN</div>
   <div><a href="mailto:etccwebsite.webmanager@gmail.com">etccwebsite.webmanager@gmail.com</a></div>
-  <div>Version: <span id="app-version">v6.5</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 28, 2026 2:45 PM</span></div>
+  <div>Version: <span id="app-version">v6.6</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 28, 2026 4:35 PM</span></div>
   <div>Website by Business Web Express &nbsp;&middot;&nbsp; <a href="mailto:info@businesswebexpress.com">info@businesswebexpress.com</a></div>
 </div>
 

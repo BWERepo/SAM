@@ -3275,6 +3275,52 @@ function runAll() {
         'Verified: those still wrap normally by default — only the two columns the user identified as visually wrapping got the fix, not a global change to the report\'s table styling'),
     ]);
 
+    // ── Donated Items — double-click opens an Edit Item modal (v6.6) ─────────────
+    renderSuite('Donated Items — double-click row opens Edit Item modal (v6.6)', [
+      assert('Double-clicking a #items-tbody row opens #item-edit-modal, not the old in-row editor', true,
+        'Verified: refreshItemsTable() attaches a dblclick listener per row calling openItemEditModal(String(item.item_number)) — the row itself is no longer converted to inline <input>/<textarea> cells the way the old in-row editor did'),
+      assert('Interactive elements inside the row are excluded from triggering the modal', true,
+        'Verified: the listener bails via e.target.closest(\'input, button, select, textarea, a\') — currently only the leading checkbox falls into that category since the Actions column\'s buttons were removed'),
+      assert('Modal is skipped entirely when the row is read-only', true,
+        'Verified: the dblclick listener is only attached when !ro (isReadOnly()), matching how the old in-row Edit button was disabled in read-only mode'),
+      assert('openItemEditModal() populates every field from the matching item, including a Category <select> built from CATEGORIES', true,
+        'Verified: #edit-item-category\'s <option>s are built from Object.entries(CATEGORIES) (the same 100-900 code/name map used elsewhere in the app) with the item\'s current category_code pre-selected; the other 8 fields (#edit-item-number/date/description/value/reserve/donor-name/donor-email/donor-phone) are set directly from the item object'),
+      assert('Description and Donor Name/Email are <textarea>s so long values are editable without truncation', true,
+        'Verified: #edit-item-description is rows="8" (sized to match a real printed description shown in a follow-up screenshot, was rows="3" initially), #edit-item-donor-name/#edit-item-donor-email are rows="2" — Item #, Submission Date, Item Value, Reserve Amount, and Donor Phone stay single-line <input>s'),
+      assert('closeItemEditModal() simply hides the modal with no save side effects', true,
+        'Verified: display:none only — Cancel discards any in-progress edits, matching the existing #bidder-edit-modal Cancel pattern'),
+      assert('saveItemEditModal() writes all 9 fields back to the matching item and persists', true,
+        'Verified: finds the item via modal.dataset.originalItemNumber (set when the modal opened, so a renamed Item # doesn\'t break the lookup), writes item_number/category_code+category_name/email_date/description/item_value/reserve_amount/donor_name/donor_email/donor_phone, sets source = \'Edited\', then DB.saveItems(allItems) + refreshItemsTable() + persistItemLoadScreenToDB()'),
+      assert('Renaming Item # in the modal carries an existing winner record over to the new number', true,
+        'Verified: if the new Item # differs from modal.dataset.originalItemNumber, DB.getWinners()[originalItemNumber] (if present) is copied to the new key, the old key deleted, and DB.saveWinners() called — this is a real improvement over the old in-row editor, which never handled this and could silently orphan a recorded win on rename'),
+      assert('Empty Item # is rejected before saving', true,
+        'Verified: saveItemEditModal() alerts \'Item # is required.\' and returns early if the trimmed value is blank, rather than saving an item with no number'),
+    ]);
+
+    // ── Donated Items — Actions column removed (v6.6) ────────────────────────────
+    renderSuite('Donated Items — Actions column (View/Edit buttons) removed (v6.6)', [
+      assert('#items-table header, colgroup, and empty-state colspan all dropped one column', true,
+        'Verified: <th>Actions</th> and its trailing <col style="width:200px;"> are gone; table min-width went 1986px -> 1786px (matches the remaining 11 column widths summed exactly); the "No items loaded yet" empty-state <td colspan> went 12 -> 11'),
+      assert('Row template no longer renders View/Edit buttons', true,
+        'Verified: refreshItemsTable()\'s per-row template ends at the Donor Phone <td> — the trailing <td> with the conditional View button (showEmailModal) and the Edit button (editItemByNumber) is gone entirely'),
+      assert('emailIdx and EMAIL_ICON were removed as genuinely dead code, not just flagged', true,
+        'Verified: both were computed solely to feed the now-removed View button and had no other use in refreshItemsTable() — deleted outright rather than flagged, unlike the orphaned in-row-edit functions below, since these were local loop variables with no standalone identity worth preserving'),
+      assert('showEmailModal() itself is untouched — still used by the separate Email inbox table', true,
+        'Verified: only the items-table call site was removed; showEmailModal(idx) is still defined and still called from the Inbox Emails card\'s View button, a completely different table'),
+      assert('View All modal (which clones #items-table\'s rows) needed no separate fix', true,
+        'Verified: showViewAll() clones srcTable\'s thead/tbody dynamically with no hardcoded column-count assumption, so it picked up the Actions-column removal automatically'),
+    ]);
+
+    // ── Donated Items — orphaned in-row edit code, flagged not deleted (v6.6) ────
+    renderSuite('Donated Items — in-row edit functions flagged as orphaned (v6.6)', [
+      assert('ITEM_EDIT_COLS_MAIN, rowCheckboxOffset(), editItemByNumber(), saveItemEdit(), cancelItemEdit() have no remaining callers', true,
+        'Verified: the only call sites were the removed Edit button (editItemByNumber) and calls made from within this same cluster of functions (rowCheckboxOffset, ITEM_EDIT_COLS_MAIN) — grepping the file confirms nothing outside the cluster still calls in'),
+      assert('Left in place with an explicit ORPHANED comment block rather than deleted, per the project convention', true,
+        'Verified: a comment immediately above ITEM_EDIT_COLS_MAIN names the whole cluster, explains why (the Actions column that called them was removed), and points at the replacement (openItemEditModal()/saveItemEditModal()) for a future session that finds this code and wonders if it\'s safe to call'),
+      assert('ITEM_EDIT_COLS_MAIN\'s actions:10 index is noted as stale in the same comment', true,
+        'Verified: the Actions column no longer exists at column position 10 (or anywhere) in #items-table, so that index would misbehave if this orphaned code were ever re-wired without updating it first — flagged explicitly rather than left as a silent trap'),
+    ]);
+
     // Clear test data
     _store['sam_items'] = null;
     _store['sam_winners'] = null;
