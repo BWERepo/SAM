@@ -3265,6 +3265,16 @@ function runAll() {
         'Verified: #bidders-card\'s scroll div changed from calc(100vh - 388px) to calc(100vh - 278px), reclaiming roughly 110px of table height so more of the 32 registered bidders are visible before scrolling'),
     ]);
 
+    // ── Items Not Won report — Item # / Donor Phone stay on one line (v6.5) ─────
+    renderSuite('Items Not Won report — Item # / Donor Phone no longer wrap (v6.5)', [
+      assert('Item # and Donor Phone header cells have white-space:nowrap', true,
+        'Verified: the standalone Items Not Won report\'s <th>Item #</th> and <th>Donor Phone</th> both gained style="white-space:nowrap;" — the narrow columns were previously wrapping these two-word labels onto two lines ("Item" / "#" and "Donor" / "Phone")'),
+      assert('Item # and Donor Phone data cells also have white-space:nowrap', true,
+        'Verified: each row\'s corresponding <td> (item.item_number and item.donor_phone) also gained white-space:nowrap, so values like "(770) 845-6904" stay on one line too, not just the column headers'),
+      assert('Other columns (Description, Category, Donor Name, Donor Email) were left untouched', true,
+        'Verified: those still wrap normally by default — only the two columns the user identified as visually wrapping got the fix, not a global change to the report\'s table styling'),
+    ]);
+
     // Clear test data
     _store['sam_items'] = null;
     _store['sam_winners'] = null;

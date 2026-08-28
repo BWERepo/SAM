@@ -21,8 +21,8 @@
        Screen") — it only looks at apple-touch-icon. Kept in sync with the same
        Club Branding favicon by updateFavicon() below. -->
   <link rel="apple-touch-icon" id="apple-touch-icon-link" href="Images/ETCClogoWhiteBackground.png" />
-  <link rel="stylesheet" href="css/table.css?v=1787927772" />
-  <link rel="stylesheet" href="css/toolbar.css?v=1787927772" />
+  <link rel="stylesheet" href="css/table.css?v=1787928353" />
+  <link rel="stylesheet" href="css/toolbar.css?v=1787928353" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -2401,8 +2401,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="js/table.js?v=1787927772"></script>
-<script src="js/toolbar.js?v=1787927772"></script>
+<script src="js/table.js?v=1787928353"></script>
+<script src="js/toolbar.js?v=1787928353"></script>
 <script>
 (function() {
   const _origInit = PageToolbar.init.bind(PageToolbar);
@@ -8760,12 +8760,12 @@ function printItemsNotWonReport() {
   });
 
   const rows = notWon.map(item => `<tr>
-    <td>${escHtml(item.item_number)}</td>
+    <td style="white-space:nowrap;">${escHtml(item.item_number)}</td>
     <td>${escHtml(item.description || '')}</td>
     <td>${escHtml(item.category_name || '')}</td>
     <td>${escHtml(item.donor_name || '(unknown)')}</td>
     <td>${escHtml(item.donor_email || '(unknown)')}</td>
-    <td>${escHtml(item.donor_phone || '(unknown)')}</td>
+    <td style="white-space:nowrap;">${escHtml(item.donor_phone || '(unknown)')}</td>
   </tr>`).join('');
 
   const html = `<!DOCTYPE html>
@@ -8804,12 +8804,12 @@ function printItemsNotWonReport() {
   <table>
     <thead>
       <tr>
-        <th>Item #</th>
+        <th style="white-space:nowrap;">Item #</th>
         <th>Description</th>
         <th>Category</th>
         <th>Donor Name</th>
         <th>Donor Email</th>
-        <th>Donor Phone</th>
+        <th style="white-space:nowrap;">Donor Phone</th>
       </tr>
     </thead>
     <tbody>
@@ -11072,7 +11072,7 @@ async function testSamApiUrl() {
 <div id="app-footer">
   <div>&copy; 2026 <span id="footer-club-name">${getClub().name}</span> &nbsp;&middot;&nbsp; Knoxville, TN</div>
   <div><a href="mailto:etccwebsite.webmanager@gmail.com">etccwebsite.webmanager@gmail.com</a></div>
-  <div>Version: <span id="app-version">v6.4</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 28, 2026 2:36 PM</span></div>
+  <div>Version: <span id="app-version">v6.5</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 28, 2026 2:45 PM</span></div>
   <div>Website by Business Web Express &nbsp;&middot;&nbsp; <a href="mailto:info@businesswebexpress.com">info@businesswebexpress.com</a></div>
 </div>
 
