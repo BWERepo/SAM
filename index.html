@@ -17,8 +17,12 @@
        any format (.ico/.svg/.png), and a hardcoded type would then be a lie.
        Default must stay in sync with getClub()'s favicon fallback. -->
   <link rel="icon" id="favicon-link" href="Images/ETCClogoWhiteBackground.png" />
-  <link rel="stylesheet" href="css/table.css?v=1787828000" />
-  <link rel="stylesheet" href="css/toolbar.css?v=1787828000" />
+  <!-- iOS Safari ignores rel="icon" entirely (both for the tab and "Add to Home
+       Screen") — it only looks at apple-touch-icon. Kept in sync with the same
+       Club Branding favicon by updateFavicon() below. -->
+  <link rel="apple-touch-icon" id="apple-touch-icon-link" href="Images/ETCClogoWhiteBackground.png" />
+  <link rel="stylesheet" href="css/table.css?v=1787923571" />
+  <link rel="stylesheet" href="css/toolbar.css?v=1787923571" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -2400,8 +2404,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="js/table.js?v=1787828000"></script>
-<script src="js/toolbar.js?v=1787828000"></script>
+<script src="js/table.js?v=1787923571"></script>
+<script src="js/toolbar.js?v=1787923571"></script>
 <script>
 (function() {
   const _origInit = PageToolbar.init.bind(PageToolbar);
@@ -4270,13 +4274,18 @@ function printBiddingSheets() {
     const itemValueRaw = parseFloat(String(item.item_value || item.value || '0').replace(/[^0-9.]/g, '')) || 0;
     // Value: reserve if present, otherwise item value
     const value = reserveRaw || itemValueRaw;
-    // Open-bid item: no reserve specified AND the declared value is at or below
-    // the Open Bids threshold. These open at $1 with no increment ladder — the
-    // $1 prints on the first row only and bidders write their own amounts on
-    // the rest. Everything else keeps the original reserve/percentage math.
-    const isOpenBid = reserveRaw === 0 && itemValueRaw <= openBidMax;
-    // Starting bid: $1 for open bids; else reserve if present, else 30% of item value
-    const startingBid = isOpenBid ? 1 : (reserveRaw || (itemValueRaw * 0.30));
+    // Open-bid item: the amount that would otherwise be its starting bid
+    // (reserve if set, else declared value) is at or below the Open Bids
+    // threshold — a reserve counts toward this now, not just an unreserved
+    // low-value item. These open at either the reserve amount or $1 (if no
+    // reserve) with no increment ladder — that opening amount prints on the
+    // first row only, and bidders write their own amounts on the rest.
+    // Everything else keeps the original reserve/percentage math.
+    const openBidCheckAmt = reserveRaw > 0 ? reserveRaw : itemValueRaw;
+    const isOpenBid = openBidCheckAmt <= openBidMax;
+    // Starting bid: reserve if set (even for open bids), else $1 for open
+    // bids, else 30% of item value for everything else.
+    const startingBid = reserveRaw > 0 ? reserveRaw : (isOpenBid ? 1 : (itemValueRaw * 0.30));
     // Increment: 10% of value if value < $100, 7% of value if value >= $100
     const incPct = value < 100 ? 0.10 : 0.07;
     const incrementAmount = isOpenBid ? 0 : value * incPct;
@@ -6269,8 +6278,14 @@ function updateFavicon(faviconUrl) {
   // getClub() both defaulted to the .png, so with no clubFavicon configured the
   // tab icon depended on which code path ran last (.png on first paint, then
   // the .ico once settings loaded). One default, defined in one place.
+  const href = faviconUrl || getClub().favicon;
   const link = document.getElementById('favicon-link');
-  if (link) link.href = faviconUrl || getClub().favicon;
+  if (link) link.href = href;
+  // iOS Safari ignores rel="icon" entirely — it only reads apple-touch-icon,
+  // for both the browser tab and "Add to Home Screen". Keep it in lockstep
+  // with the regular favicon rather than adding a second Settings field.
+  const appleLink = document.getElementById('apple-touch-icon-link');
+  if (appleLink) appleLink.href = href;
 }
 
 function saveSettings() {
@@ -11121,7 +11136,7 @@ async function testSamApiUrl() {
 <div id="app-footer">
   <div>&copy; 2026 <span id="footer-club-name">${getClub().name}</span> &nbsp;&middot;&nbsp; Knoxville, TN</div>
   <div><a href="mailto:etccwebsite.webmanager@gmail.com">etccwebsite.webmanager@gmail.com</a></div>
-  <div>Version: <span id="app-version">v6.1</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 27, 2026 10:53 AM</span></div>
+  <div>Version: <span id="app-version">v6.2</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 28, 2026 1:26 PM</span></div>
   <div>Website by Business Web Express &nbsp;&middot;&nbsp; <a href="mailto:info@businesswebexpress.com">info@businesswebexpress.com</a></div>
 </div>
 

@@ -3051,14 +3051,18 @@ function runAll() {
         'Verified: updateHomeAuctionPanel()/renderAuctionsList() are pure re-render functions that read from DB.getAuctions()/currentAuction() and are already called elsewhere (e.g. archiveAuction(), openAuction()) — calling them again after login is safe and idempotent, no new API calls or session state introduced'),
     ]);
 
-    // ── Bid Sheets — Open Bids category + strictly rising ladder (v6.0) ─────────
+    // ── Bid Sheets — Open Bids category + strictly rising ladder (v6.0, updated v6.2) ─
     // Local mirror of the amount math inside printBiddingSheets() (index.html).
     // Copied rather than imported because that function builds an entire print
     // document via openPrintWindow(); this exercises the arithmetic it depends on.
     const bidLadder = (reserveRaw, itemValueRaw, openBidMax = 35, bidCount = 20) => {
       const value = reserveRaw || itemValueRaw;
-      const isOpenBid = reserveRaw === 0 && itemValueRaw <= openBidMax;
-      const startingBid = isOpenBid ? 1 : (reserveRaw || (itemValueRaw * 0.30));
+      // v6.2: a reserve now counts toward the open-bid check too (previously
+      // any reserve disqualified an item outright) — see the dedicated
+      // "reserve counts toward Open Bids" suite below for the full rationale.
+      const openBidCheckAmt = reserveRaw > 0 ? reserveRaw : itemValueRaw;
+      const isOpenBid = openBidCheckAmt <= openBidMax;
+      const startingBid = reserveRaw > 0 ? reserveRaw : (isOpenBid ? 1 : (itemValueRaw * 0.30));
       const incPct = value < 100 ? 0.10 : 0.07;
       const incrementAmount = isOpenBid ? 0 : value * incPct;
       const amounts = []; let prev = null;
@@ -3071,19 +3075,16 @@ function runAll() {
     };
     const strictlyRising = arr => arr.every((n, i) => i === 0 || n > arr[i - 1]);
 
-    renderSuite('Bid Sheets — Open Bids category + strictly rising ladder (v6.0)', [
+    renderSuite('Bid Sheets — Open Bids category + strictly rising ladder (v6.0, updated v6.2)', [
       assert('Open-bid item = no reserve AND declared value at or below the Open Bids threshold',
         bidLadder(0, 25).isOpenBid === true && bidLadder(0, 35).isOpenBid === true,
-        'Verified: isOpenBid = reserveRaw === 0 && itemValueRaw <= openBidMax — the threshold is inclusive, so an item exactly at the $35 default still qualifies'),
-      assert('An item with a reserve is never open-bid, even well below the threshold',
-        bidLadder(10, 20).isOpenBid === false,
-        'Verified: the reserveRaw === 0 half of the test fails, so a reserved item always uses the normal reserve/percentage math regardless of how low its value is'),
+        'Verified: with no reserve, isOpenBid falls back to itemValueRaw <= openBidMax — the threshold is inclusive, so an item exactly at the $35 default still qualifies'),
       assert('An item valued above the threshold is not open-bid',
         bidLadder(0, 36).isOpenBid === false && bidLadder(0, 40).isOpenBid === false,
         'Verified: $36 with the $35 default falls outside the category and keeps the standard 30%-of-value starting bid'),
-      assert('Open-bid sheets open at $1',
+      assert('Open-bid sheets with no reserve open at $1',
         bidLadder(0, 25).amounts[0] === 1,
-        'Verified: startingBid = 1 for open-bid items. printBiddingSheets() renders that $1 on row 1 only — rows 2-20 emit an empty <td> so bidders write their own amounts (no preprinted increment ladder)'),
+        'Verified: startingBid = 1 when reserveRaw is 0 for an open-bid item. printBiddingSheets() renders that $1 on row 1 only — rows 2-20 emit an empty <td> so bidders write their own amounts (no preprinted increment ladder)'),
       assert('Setting Open Bids to 0 disables the category for every item with a declared value',
         bidLadder(0, 25, 0).isOpenBid === false && bidLadder(0, 1, 0).isOpenBid === false,
         'Verified: with openBidMax 0 nothing with a real value satisfies value <= 0. Note a $0/undeclared item still qualifies even at 0 (0 <= 0 holds) — which is the desirable outcome, since the alternative is the old sheet of 20 rows all reading $0. Settings saves blank/invalid input as 0 (same pattern as squarePct/squareFee), and only a missing setting falls back to the $35 default'),
@@ -3095,8 +3096,8 @@ function runAll() {
           .every(([r, v]) => strictlyRising(bidLadder(r, v).amounts)),
         'Verified: each row is forced to at least prevAmt + 1. This is the core guarantee — no two preprinted rows can ever show the same dollar figure'),
       assert('Sub-$1 increments no longer collapse consecutive rows onto the same figure',
-        JSON.stringify(bidLadder(2, 3).amounts.slice(0, 6)) === JSON.stringify([2,3,4,5,6,7]),
-        'Verified: a $2 reserve steps by 10% = $0.20, so Math.round() previously produced 2, 2, 2, 3, 3, 3 — multiple rows at an identical amount. The guard now yields 2, 3, 4, 5, 6, 7'),
+        JSON.stringify(bidLadder(2, 3, 0).amounts.slice(0, 6)) === JSON.stringify([2,3,4,5,6,7]),
+        'Verified: a $2 reserve steps by 10% = $0.20, so Math.round() previously produced 2, 2, 2, 3, 3, 3 — multiple rows at an identical amount. The guard now yields 2, 3, 4, 5, 6, 7. Open Bids is forced to 0 (disabled) here on purpose — under the v6.2 rule a $2 reserve is itself open-bid at the $35 default, which skips the increment ladder (and this collapse) entirely; a low enough openBidMax is needed to reach the non-open-bid branch at all for such a small reserve'),
       assert('Ladders that were already rising keep their exact previous amounts (no regression)',
         JSON.stringify(bidLadder(0, 40).amounts.slice(0, 5)) === JSON.stringify([12,16,20,24,28])
         && JSON.stringify(bidLadder(0, 150).amounts.slice(0, 6)) === JSON.stringify([45,56,66,77,87,98])
@@ -3116,16 +3117,34 @@ function runAll() {
         'Verified: parseFloat(\'\') is NaN so the || 0 fallback applies — matching how squarePct/squareFee already behave in the same object. An explicit 0 is the natural "disable" value and survives the round trip because DEFAULT_SETTINGS is merged with ?? not ||'),
     ]);
 
-    // ── Starting Bid List — open-bid alignment (v6.0) ────────────────────────────
-    renderSuite('Starting Bid List — matches the bid sheets on open bids (v6.0)', [
-      assert('starting-bid-list.php applies the same open-bid rule', true,
-        'Verified: $isOpenBid = $reserve <= 0 && $value <= $openBidMax; $startingBid = $isOpenBid ? 1 : ($reserve > 0 ? $reserve : $value * $startingBidPct / 100) — the nested ternary is explicitly parenthesized, which PHP 8 requires'),
+    // ── Bid Sheets — a reserve now counts toward Open Bids (v6.2) ────────────────
+    renderSuite('Bid Sheets — a reserve now counts toward Open Bids (v6.2)', [
+      assert('An item WITH a reserve can now qualify as open-bid, if the reserve itself is <= the threshold',
+        bidLadder(20, 200).isOpenBid === true,
+        'Verified: reserve $20 / value $200 (threshold $35) is open-bid — v6.0 required reserveRaw === 0, which unconditionally excluded every reserved item regardless of how low the reserve was. That exclusion is gone: openBidCheckAmt now uses the reserve when one is set, else the declared value'),
+      assert('Open-bid items with a reserve open at the reserve amount, not $1',
+        JSON.stringify(bidLadder(20, 200).amounts.slice(0, 3)) === JSON.stringify([20, 21, 22]),
+        'Verified: startingBid = reserveRaw when reserveRaw > 0, even inside the open-bid branch — only a reserve-less open-bid item falls back to $1. No preprinted increment ladder either way (incrementAmount is 0 for any open-bid item), so 21/22 come from the strictly-rising +1 guard forcing distinct rows, not a real increment'),
+      assert('A reserve above the threshold still excludes the item from Open Bids, same as before',
+        bidLadder(50, 60).isOpenBid === false && bidLadder(50, 60).amounts[0] === 50,
+        'Verified: reserve $50 > $35 threshold keeps the item on the normal reserve/percentage path — reserve $50, value $60 opens at $50 with the standard increment ladder, exactly as v6.0 already behaved for any reserved item'),
+      assert('The threshold is inclusive on the reserve path too',
+        bidLadder(35, 500).isOpenBid === true && bidLadder(36, 500).isOpenBid === false,
+        'Verified: reserve exactly $35 (the default threshold) still qualifies as open-bid and opens at $35; reserve $36 does not. Matches the existing inclusive behavior already verified for the no-reserve/value path above'),
+      assert('starting-bid-list.php was updated with the identical reserve-counts rule', true,
+        'Verified: $openBidCheckAmt = $reserve > 0 ? $reserve : $value; $isOpenBid = $openBidCheckAmt <= $openBidMax; $startingBid = $reserve > 0 ? $reserve : ($isOpenBid ? 1 : $value * $startingBidPct / 100) — same shape as the JS, keeping the two implementations in sync per the header comment\'s cross-reference'),
+    ]);
+
+    // ── Starting Bid List — open-bid alignment (v6.0, updated v6.2) ──────────────
+    renderSuite('Starting Bid List — matches the bid sheets on open bids (v6.0, updated v6.2)', [
+      assert('starting-bid-list.php applies the same open-bid rule as the bid sheets', true,
+        'Verified: $openBidCheckAmt = $reserve > 0 ? $reserve : $value; $isOpenBid = $openBidCheckAmt <= $openBidMax; $startingBid = $reserve > 0 ? $reserve : ($isOpenBid ? 1 : ($value * $startingBidPct / 100)) — every ternary is explicitly parenthesized, which PHP 8 requires for nested ternaries'),
       assert('Reads openBidMax from sam_settings with the same 0-disables semantics', true,
         'Verified: isset($settings[\'openBidMax\']) && $settings[\'openBidMax\'] !== \'\' — strict !== means an integer 0 passes through as 0 (category off) and only a missing/blank value falls back to 35, matching the app\'s ?? behavior'),
       assert('Parses the stored setting through the same money-stripping as reserve/value', true,
         'Verified: (float)preg_replace(\'/[^0-9.]/\', \'\', ...) mirrors the JS parseMoney() helper, so a setting stored as "$35.00" resolves to 35 rather than 0'),
       assert('Header comment cross-references printBiddingSheets() as the file to stay in sync with', true,
-        'Verified: the two starting-bid computations now live in different languages and files, so the PHP header explicitly names index.html\'s printBiddingSheets() — without that the list would silently drift from the printed sheet again'),
+        'Verified: the two starting-bid computations now live in different languages and files, so the PHP header explicitly names index.html\'s printBiddingSheets() — without that the list would silently drift from the printed sheet again. Updated in v6.2 to describe the reserve-counts-too rule'),
     ]);
 
     // ── Nav — Developer row keeps the drawer open (v6.0) ─────────────────────────
@@ -3156,6 +3175,20 @@ function runAll() {
         'Verified: the static <link rel="icon"> lost its type="image/png" attribute, since Settings > Club Branding > Club Favicon URL can override the href with a .ico/.svg/anything, and a hardcoded png type would misdescribe those'),
       assert('getClub() remains the single source of truth for the default path', true,
         'Verified: getClub().favicon = s.clubFavicon || \'Images/ETCClogoWhiteBackground.png\' is unchanged — only updateFavicon()\'s duplicate fallback was removed, so a future change to the default only needs to happen in getClub()'),
+    ]);
+
+    // ── Favicon — apple-touch-icon for iOS (v6.2) ────────────────────────────────
+    renderSuite('Favicon — apple-touch-icon added for iOS Safari (v6.2)', [
+      assert('Root cause: iOS Safari ignores rel="icon" entirely — it never had an apple-touch-icon tag to read', true,
+        'Verified: reported symptom was the favicon not appearing on iPhone/iPad. iOS Safari does not use the standard rel="icon" link at all, for either the browser tab or "Add to Home Screen" — it looks exclusively for rel="apple-touch-icon", which this app never had, so nothing could show on iOS regardless of what the desktop favicon was set to'),
+      assert('Fix: a static apple-touch-icon <link> was added to <head>', true,
+        'Verified: <link rel="apple-touch-icon" id="apple-touch-icon-link" href="Images/ETCClogoWhiteBackground.png" /> added alongside the existing rel="icon" tag, defaulting to the same image'),
+      assert('updateFavicon() keeps the apple-touch-icon in lockstep with the regular favicon', true,
+        'Verified: updateFavicon() now computes href = faviconUrl || getClub().favicon once, then sets both #favicon-link.href and #apple-touch-icon-link.href to that same value — Settings > Club Branding > Club Favicon URL controls both with no new setting needed'),
+      assert('No new Settings field was added for a separate iOS-specific icon', true,
+        'Verified: deliberately kept to one Club Favicon URL control rather than adding a second field — the existing branding image is reused for both rel="icon" and rel="apple-touch-icon"'),
+      assert('Known limitation: the current default image is 150x116px and non-square, below Apple\'s 180x180 square guidance', true,
+        'Verified: Images/ETCClogoWhiteBackground.png\'s dimensions were checked directly from its PNG IHDR chunk (150x116). No image-editing tooling (ImageMagick/sharp/canvas) was available in this environment to produce a properly sized square icon, so iOS may crop/pad the image imperfectly — it will now show something rather than nothing, but a dedicated 180x180+ square PNG would look sharper if the club supplies one'),
     ]);
 
     // Clear test data

@@ -2,7 +2,8 @@
 // Standalone "Starting Bid List" page — bookmarkable URL, no login required
 // (same pattern as add-item.php). Read-only: lists every donated item with
 // its starting bid, computed the same way as the app's bid sheets:
-//   - Open-bid item (no reserve AND value <= Settings > Open Bids): $1
+//   - Open-bid item (reserve if set, else value, is <= Settings > Open Bids):
+//     Reserve Amount if set, else $1
 //   - Otherwise Reserve Amount if set and non-zero
 //   - Otherwise Item Value x Starting Bid % (Settings > Auction Setup)
 // Keep this in sync with printBiddingSheets() in index.html — the two must
@@ -120,9 +121,14 @@ usort($items, fn($a, $b) => strnatcasecmp((string)($a['item_number'] ?? ''), (st
 <?php foreach ($items as $item):
     $reserve = (float)preg_replace('/[^0-9.]/', '', (string)($item['reserve_amount'] ?? '0'));
     $value   = (float)preg_replace('/[^0-9.]/', '', (string)($item['item_value'] ?? ($item['value'] ?? '0')));
-    // Open-bid items open at $1 flat — see the header comment above.
-    $isOpenBid = $reserve <= 0 && $value <= $openBidMax;
-    $startingBid = $isOpenBid ? 1 : ($reserve > 0 ? $reserve : ($value * $startingBidPct / 100));
+    // Open-bid item: the amount that would otherwise be its starting bid
+    // (reserve if set, else declared value) is at or below the Open Bids
+    // threshold — a reserve counts toward this now, not just an unreserved
+    // low-value item. Starting bid is then the reserve amount if set, else
+    // $1. See the header comment above.
+    $openBidCheckAmt = $reserve > 0 ? $reserve : $value;
+    $isOpenBid = $openBidCheckAmt <= $openBidMax;
+    $startingBid = $reserve > 0 ? $reserve : ($isOpenBid ? 1 : ($value * $startingBidPct / 100));
     $catCode = (string)($item['category_code'] ?? '');
     $catName = $item['category_name'] ?? ($CATEGORIES[$catCode] ?? '');
 ?>
