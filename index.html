@@ -21,8 +21,8 @@
        Screen") — it only looks at apple-touch-icon. Kept in sync with the same
        Club Branding favicon by updateFavicon() below. -->
   <link rel="apple-touch-icon" id="apple-touch-icon-link" href="Images/ETCClogoWhiteBackground.png" />
-  <link rel="stylesheet" href="css/table.css?v=1787923571" />
-  <link rel="stylesheet" href="css/toolbar.css?v=1787923571" />
+  <link rel="stylesheet" href="css/table.css?v=1787926826" />
+  <link rel="stylesheet" href="css/toolbar.css?v=1787926826" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1136,12 +1136,11 @@
       <div class="card" id="bs-items-card">
         <div id="bs-toolbar-wrap"></div>
         <div style="overflow-x:auto;max-height:calc(100vh - 278px);overflow-y:auto;">
-          <table class="tablekit" id="bs-items-table" style="table-layout:fixed;width:100%;min-width:1400px;">
+          <table class="tablekit" id="bs-items-table" style="table-layout:fixed;width:100%;min-width:1172px;">
             <colgroup>
               <col style="width:32px;"><col style="width:80px;"><col style="width:130px;"><col style="width:160px;">
               <col style="width:200px;"><col style="width:80px;"><col style="width:80px;">
               <col style="width:130px;"><col style="width:160px;"><col style="width:120px;">
-              <col style="width:130px;"><col style="width:100px;">
             </colgroup>
             <thead>
               <tr>
@@ -1155,8 +1154,6 @@
                 <th>Donor Name</th>
                 <th>Donor Email</th>
                 <th>Donor Phone</th>
-                <th>Date Loaded</th>
-                <th>Row Height</th>
               </tr>
             </thead>
             <tbody id="bs-items-tbody"></tbody>
@@ -1748,7 +1745,7 @@
           <div class="form-row">
             <label for="inp-open-bid-max">Open Bids</label>
             <input type="number" id="inp-open-bid-max" min="0" step="0.01" style="width:100px;" />
-            <span class="form-hint">Maximum item value (with no reserve set) that counts as an open bid item. Those bid sheets open at $1 and print no bid increments — bidders write their own amounts.</span>
+            <span class="form-hint">Maximum item value that counts as an "open auction" item (regardless of reserve). Those bid sheets preprint only the first bid — $1, or the reserve amount if set — with no increment ladder; bidders write in their own amounts on the rest. Items above this value are "premium auctions" with every row preprinted.</span>
           </div>
           <div class="form-row">
             <label for="inp-walk-in-start">Walk-in Bidder Start #</label>
@@ -2404,8 +2401,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="js/table.js?v=1787923571"></script>
-<script src="js/toolbar.js?v=1787923571"></script>
+<script src="js/table.js?v=1787926826"></script>
+<script src="js/toolbar.js?v=1787926826"></script>
 <script>
 (function() {
   const _origInit = PageToolbar.init.bind(PageToolbar);
@@ -2500,7 +2497,13 @@ const DEFAULT_SETTINGS = {
   donationEmailCc:      '',
   donationEmailBcc:     '',
   donationEmailSubject: 'New Item Donation Submitted',
-  bidRowHeight:       0.28, // Bid sheet row height in inches (Step 2 — Create Bid Sheets)
+  // Orphaned: bid sheet row height used to be user-configurable (a per-item
+  // override column plus a toolbar control on Step 2 — Create Bid Sheets),
+  // both removed. printBiddingSheets() now uses its own fixed
+  // BID_SHEET_ROW_HEIGHT_IN constant and no longer reads this. Left in place
+  // (not deleted) per the project's "flag, don't delete" convention — some
+  // existing items may still carry a stale item.bidRowHeight value too.
+  bidRowHeight:       0.28,
   memberImportDate:   '',
   regImportDate:      '',
   // Default password gating Settings access and Delete Auction (both use
@@ -4260,9 +4263,24 @@ function printBiddingSheets() {
   debugLog(`Printing bid sheets for ${checked.length} item${checked.length !== 1 ? 's' : ''}`);
 
   const bidCount     = 20; // fixed at 20 rows so each bid sheet fills exactly one page
-  const rowHeight    = parseFloat(DB.getSettings().bidRowHeight) || 0.28; // in, editable in this screen's toolbar
-  // Settings → Auction Setup → "Open Bids": max declared value (reserve unset)
-  // that still counts as an open-bid item. 0 disables the category entirely.
+  // Fixed, not user-configurable — the per-item override column and the
+  // toolbar's global control were both removed so every sheet's bid-row
+  // height is identical, matching the fixed description/info-row heights below.
+  const BID_SHEET_ROW_HEIGHT_IN = 0.40;
+  const rowHeight    = BID_SHEET_ROW_HEIGHT_IN;
+  // ══════════════════════════════════════════════════════════════════════════
+  // BID SHEET ALGORITHM (Settings → Auction Setup → "Open Bids", default $35)
+  // Every item is either an OPEN AUCTION or a PREMIUM AUCTION, decided by the
+  // item's declared Value alone — reserve never affects which one applies.
+  //   - OPEN  (Value <= Open Bids threshold): only the first bid is
+  //     preprinted — $1 if no reserve, else the reserve amount. Rows 2-N
+  //     print blank so bidders write in their own amounts; no increment
+  //     ladder at all.
+  //   - PREMIUM (Value > threshold): every row is preprinted. First bid is
+  //     the reserve if set, else 30% of Value. Increment is 10% of Value if
+  //     Value < $100, 7% of Value if Value >= $100.
+  // 0 disables the Open category entirely (every item becomes Premium).
+  // ══════════════════════════════════════════════════════════════════════════
   const openBidMax   = parseMoney(DB.getSettings().openBidMax ?? 35);
 
   const items = Items.getAll();
@@ -4272,23 +4290,15 @@ function printBiddingSheets() {
   const sheets = selected.map(item => {
     const reserveRaw   = parseFloat(String(item.reserve_amount || '0').replace(/[^0-9.]/g, '')) || 0;
     const itemValueRaw = parseFloat(String(item.item_value || item.value || '0').replace(/[^0-9.]/g, '')) || 0;
-    // Value: reserve if present, otherwise item value
-    const value = reserveRaw || itemValueRaw;
-    // Open-bid item: the amount that would otherwise be its starting bid
-    // (reserve if set, else declared value) is at or below the Open Bids
-    // threshold — a reserve counts toward this now, not just an unreserved
-    // low-value item. These open at either the reserve amount or $1 (if no
-    // reserve) with no increment ladder — that opening amount prints on the
-    // first row only, and bidders write their own amounts on the rest.
-    // Everything else keeps the original reserve/percentage math.
-    const openBidCheckAmt = reserveRaw > 0 ? reserveRaw : itemValueRaw;
-    const isOpenBid = openBidCheckAmt <= openBidMax;
-    // Starting bid: reserve if set (even for open bids), else $1 for open
-    // bids, else 30% of item value for everything else.
+    const isOpenBid = itemValueRaw <= openBidMax;
+    // First bid: Open = $1, or the reserve if set. Premium = the reserve if
+    // set, else 30% of Value. (Reserve wins in both cases — only the
+    // no-reserve fallback differs between the two auction types.)
     const startingBid = reserveRaw > 0 ? reserveRaw : (isOpenBid ? 1 : (itemValueRaw * 0.30));
-    // Increment: 10% of value if value < $100, 7% of value if value >= $100
-    const incPct = value < 100 ? 0.10 : 0.07;
-    const incrementAmount = isOpenBid ? 0 : value * incPct;
+    // Increment: Premium only — Open auctions print no ladder at all.
+    // 10% of Value if Value < $100, 7% of Value if Value >= $100.
+    const incPct = itemValueRaw >= 100 ? 0.07 : 0.10;
+    const incrementAmount = isOpenBid ? 0 : itemValueRaw * incPct;
     const bidAmounts = [];
     let prevAmt = null;
     for (let i = 0; i < bidCount; i++) {
@@ -4309,21 +4319,21 @@ function printBiddingSheets() {
       const disp = '$' + amt.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
       return `<tr><td></td><td></td><td>${disp}</td></tr>`;
     }).join('');
-    // Description shown in full on the bid sheet — no truncation.
+    // Description box is a fixed 4-line height (see the sheet-info table
+    // below) — anything beyond that is visually clipped on the bid sheet
+    // itself (overflow:hidden), for a uniform layout across every sheet
+    // regardless of description length. The printed label page underneath
+    // each sheet still carries the fuller text (up to 700 chars) since that
+    // page has no fixed-height constraint.
     const dDesc     = item.description || '';
     const descSheet = dDesc;
     const descLabel = dDesc.length > 700 ? dDesc.slice(0, 700).trim() + '…' : dDesc;
-    // Per-item row height override (Create Bid Sheets table); falls back to
-    // the screen's global Row Height setting.
-    const itemRowH = (item.bidRowHeight !== undefined && item.bidRowHeight !== null && item.bidRowHeight !== '')
-      ? parseFloat(item.bidRowHeight) : rowHeight;
-    // .sheet has page-break-inside:avoid so a normal-length description keeps
-    // the bid table together on one page. For an unusually long description
-    // that can't fit on one page anyway, "avoid" forces Chrome's print layout
-    // to repeatedly try (and fail) to fit the block, which hangs the tab.
-    // Once text is long enough to risk overflowing the page, switch back to
-    // the browser's default page-break-inside:auto so it just flows normally.
-    const sheetBreak = dDesc.length > 400 ? 'auto' : 'avoid';
+    // Every box on the sheet is now a fixed height (description, the
+    // category/donor/value/reserve row, and each bid row via --row-h below),
+    // so the sheet's total height is fixed too — page-break-inside:avoid can
+    // stay on unconditionally without the old risk of Chrome hanging on a
+    // description tall enough to overflow one page.
+    const sheetBreak = 'avoid';
     // Bid Amount column is sized to match the Value box above it. Value's grid
     // column is 0.8fr out of the info row's total fr (which gains a 4th 0.8fr
     // column when Reserve is shown), applied against the sheet's 7in usable
@@ -4334,7 +4344,7 @@ function printBiddingSheets() {
     const bidAmtColW       = (0.8 / infoTotalFr * sheetContentInW).toFixed(3);
     const bidOtherColW     = ((sheetContentInW - bidAmtColW) / 2).toFixed(3);
     return `
-    <div class="sheet" style="--row-h:${itemRowH}in;page-break-inside:${sheetBreak};--bid-amt-w:${bidAmtColW}in;--bid-other-w:${bidOtherColW}in;">
+    <div class="sheet" style="--row-h:${rowHeight}in;page-break-inside:${sheetBreak};--bid-amt-w:${bidAmtColW}in;--bid-other-w:${bidOtherColW}in;">
       <div class="sheet-header">
         <div class="sheet-title">${getClub().name} — Silent Auction</div>
         <div class="sheet-item-num">Item # ${escHtml(String(item.item_number))}</div>
@@ -4342,16 +4352,16 @@ function printBiddingSheets() {
       <table class="sheet-info">
         <tr>
           <td style="padding:0;border:none;">
-            <div style="border:1px solid #000;background:#dbeafe;padding:3px 5px;"><span style="font-weight:800;font-size:16.8px;">Description: </span><span class="sheet-desc" style="font-weight:800;font-size:16.8px;"><span class="desc-clamp">${escHtml(descSheet)}</span></span></div>
+            <div style="border:1px solid #000;background:#dbeafe;padding:3px 5px;height:0.92in;box-sizing:border-box;overflow:hidden;"><span style="font-weight:800;font-size:16.8px;">Description: </span><span class="sheet-desc" style="font-weight:800;font-size:16.8px;"><span class="desc-clamp">${escHtml(descSheet)}</span></span></div>
           </td>
         </tr>
         <tr>
           <td style="padding:0;border:none;">
-            <div style="display:grid;grid-template-columns:2fr 1.5fr 0.8fr ${hasReserve ? '0.8fr' : ''};gap:0;height:100%;">
-              <div style="border:1px solid #000;background:#dbeafe;padding:3px 5px;"><span style="font-weight:800;font-size:16.8px;">Category: </span><span style="font-weight:800;font-size:16.8px;">${escHtml(item.category_name || '')}</span></div>
-              <div style="border:1px solid #000;background:#dbeafe;padding:3px 5px;"><span style="font-weight:800;font-size:16.8px;">Donor: </span><span style="font-weight:800;font-size:16.8px;">${escHtml(item.donor_name || '')}</span></div>
-              <div style="border:1px solid #000;background:#dbeafe;padding:3px 5px;"><span style="font-weight:800;font-size:16.8px;">Value: </span><span style="font-weight:800;font-size:16.8px;">${fmtDollar(item.item_value || item.value)}</span></div>
-              ${hasReserve ? `<div style="border:1px solid #000;background:#dbeafe;padding:3px 5px;"><span style="font-weight:800;font-size:16.8px;">Reserve: </span><span style="font-weight:800;font-size:16.8px;">${fmtDollar(item.reserve_amount)}</span></div>` : ''}
+            <div style="display:grid;grid-template-columns:2fr 1.5fr 0.8fr ${hasReserve ? '0.8fr' : ''};grid-auto-rows:0.50in;gap:0;height:0.50in;overflow:hidden;box-sizing:border-box;">
+              <div style="border:1px solid #000;background:#dbeafe;padding:3px 5px;box-sizing:border-box;overflow:hidden;line-height:1.2;"><span style="font-weight:800;font-size:16.8px;">Category: </span><span style="font-weight:800;font-size:16.8px;">${escHtml(item.category_name || '')}</span></div>
+              <div style="border:1px solid #000;background:#dbeafe;padding:3px 5px;box-sizing:border-box;overflow:hidden;line-height:1.2;"><span style="font-weight:800;font-size:16.8px;">Donor: </span><span style="font-weight:800;font-size:16.8px;">${escHtml(item.donor_name || '')}</span></div>
+              <div style="border:1px solid #000;background:#dbeafe;padding:3px 5px;box-sizing:border-box;overflow:hidden;line-height:1.2;"><span style="font-weight:800;font-size:16.8px;">Value: </span><span style="font-weight:800;font-size:16.8px;">${fmtDollar(item.item_value || item.value)}</span></div>
+              ${hasReserve ? `<div style="border:1px solid #000;background:#dbeafe;padding:3px 5px;box-sizing:border-box;overflow:hidden;line-height:1.2;"><span style="font-weight:800;font-size:16.8px;">Reserve: </span><span style="font-weight:800;font-size:16.8px;">${fmtDollar(item.reserve_amount)}</span></div>` : ''}
             </div>
           </td>
         </tr>
@@ -4394,12 +4404,13 @@ function printBiddingSheets() {
   .sheet-info td { padding: 2px 4px; border: 1px solid #d2d2d7; vertical-align: top; }
   .sheet-info td.label { font-weight: 600; width: 75px; background: #f5f5f7; }
   .sheet-desc { word-wrap: break-word; white-space: normal; overflow-wrap: break-word; line-height: 1.2; max-width: 600px; }
-  /* Description prints in full — no line clamp. May push the bid table onto
-     a following page for unusually long descriptions. */
-  .sheet-desc .desc-clamp { overflow: visible; }
-  /* 20 fixed-height bid rows. Row height is editable per-item in the Create Bid
-     Sheets table (falls back to the screen's global Row Height field), passed
-     in via the --row-h custom property on each .sheet. */
+  /* Description box is a fixed height sized for 4 lines (inline style on the
+     box itself, JS-generated) with overflow:hidden — anything beyond that is
+     visually clipped so every sheet's layout is identical regardless of
+     description length. */
+  /* 20 fixed-height bid rows — height comes from printBiddingSheets()'s fixed
+     BID_SHEET_ROW_HEIGHT_IN constant (no longer user-configurable), passed in
+     via the --row-h custom property on each .sheet. */
   .bid-wrap { width: 100%; }
   .bid-table { width: 100%; border-collapse: collapse; font-size: 14.4px; }
   /* Browsers strip background colors from print output by default (to save
@@ -6024,16 +6035,12 @@ function refreshBsItemsTable() {
   tbody.innerHTML = '';
 
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:20px;color:var(--text-secondary);">No items loaded yet. Complete Step 1 first.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--text-secondary);">No items loaded yet. Complete Step 1 first.</td></tr>';
     return;
   }
 
-  const defaultRowHeight = parseFloat(DB.getSettings().bidRowHeight) || 0.28;
-
   items.forEach(item => {
     const catCode = item.category_code ? 'cat-' + item.category_code : 'cat-900';
-    const rowH = item.bidRowHeight !== undefined && item.bidRowHeight !== null && item.bidRowHeight !== ''
-      ? item.bidRowHeight : defaultRowHeight;
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td style="text-align:center;"><input type="checkbox" class="bs-chk" checked ${isReadOnly() ? 'disabled' : ''}/></td>
@@ -6046,13 +6053,6 @@ function refreshBsItemsTable() {
       <td>${escHtml(item.donor_name)}</td>
       <td style="font-size:11px;">${escHtml(item.donor_email)}</td>
       <td style="font-size:11px;">${escHtml(item.donor_phone)}</td>
-      <td style="font-size:11px;white-space:nowrap;">${escHtml(item.loaded_date)}</td>
-      <td style="text-align:center;">
-        <input type="number" class="bs-row-height" data-item-number="${escHtml(String(item.item_number))}"
-          value="${rowH}" min="0.15" max="0.60" step="0.01" ${isReadOnly() ? 'disabled' : ''}
-          style="width:64px;padding:3px 5px;border:1px solid var(--border);border-radius:6px;font-size:12px;"
-          onchange="updateItemRowHeight('${escHtml(String(item.item_number))}', this.value)">
-      </td>
     `;
     tbody.appendChild(tr);
   });
@@ -6067,21 +6067,6 @@ function refreshBsItemsTable() {
     bsCell0.innerHTML = '<input type="checkbox" id="bs-check-all" checked onchange="bsToggleAll()" title="Check / uncheck all" style="width:18px;height:18px;cursor:pointer;margin:0;">';
     bsCell0.style.textAlign = 'center';
     bsCell0.style.verticalAlign = 'middle';
-  }
-}
-
-// Per-item bid sheet row height override (Create Bid Sheets table). Auto-saves
-// on change — no separate save step needed.
-function updateItemRowHeight(itemNumber, value) {
-  let v = parseFloat(value);
-  if (isNaN(v) || v <= 0) v = parseFloat(DB.getSettings().bidRowHeight) || 0.28;
-  v = Math.min(0.60, Math.max(0.15, v));
-  const items = Items.getAll();
-  const item = items.find(i => String(i.item_number) === String(itemNumber));
-  if (item) {
-    item.bidRowHeight = v;
-    DB.saveItems(items);
-    debugLog(`Row height for item ${itemNumber} set to ${v}in`);
   }
 }
 
@@ -6749,58 +6734,9 @@ async function navigate(screenId) {
         return b;
       };
       // Check All / Clear All removed — use the toggle-all checkbox in the table header instead.
-      // Row height control: editable field for the bid sheet's per-row height (inches).
-      const rowHeightWrap = document.createElement('div');
-      rowHeightWrap.style.cssText = 'display:flex;align-items:center;gap:6px;margin-right:8px;';
-      const rowHeightLabel = document.createElement('label');
-      rowHeightLabel.textContent = 'Row Height (in):';
-      rowHeightLabel.style.cssText = 'font-size:12px;color:#fff;white-space:nowrap;';
-      const rowHeightInput = document.createElement('input');
-      rowHeightInput.type = 'number';
-      rowHeightInput.id = 'bs-row-height-input';
-      rowHeightInput.min = '0.15';
-      rowHeightInput.max = '0.60';
-      rowHeightInput.step = '0.01';
-      rowHeightInput.value = DB.getSettings().bidRowHeight ?? 0.28;
-      rowHeightInput.style.cssText = 'width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px;';
-      // If bidRowHeight has never been explicitly saved, persist the default now
-      // so it's committed to the database (not just a runtime merge default).
-      const rawSettings = JSON.parse(localStorage.getItem('sam_settings') || '{}');
-      if (rawSettings.bidRowHeight === undefined) {
-        const settingsWithDefault = DB.getSettings();
-        DB.saveSettings(settingsWithDefault);
-      }
-      rowHeightInput.addEventListener('change', () => {
-        let v = parseFloat(rowHeightInput.value);
-        if (isNaN(v) || v <= 0) v = 0.28;
-        v = Math.min(0.60, Math.max(0.15, v));
-        rowHeightInput.value = v;
-
-        const settings   = DB.getSettings();
-        const oldDefault = parseFloat(settings.bidRowHeight) || 0.28;
-        settings.bidRowHeight = v;
-        DB.saveSettings(settings);
-
-        // Only cascade to items that were still at the previous default (no
-        // override, or an override that happened to equal it). Items with a
-        // different explicit value were intentionally changed — leave them.
-        const items = Items.getAll();
-        let touched = false;
-        items.forEach(item => {
-          const effective = (item.bidRowHeight !== undefined && item.bidRowHeight !== null && item.bidRowHeight !== '')
-            ? parseFloat(item.bidRowHeight) : oldDefault;
-          if (effective === oldDefault && item.bidRowHeight !== undefined) {
-            delete item.bidRowHeight; // resume tracking whichever default is current
-            touched = true;
-          }
-        });
-        if (touched) DB.saveItems(items);
-
-        refreshBsItemsTable();
-      });
-      rowHeightWrap.appendChild(rowHeightLabel);
-      rowHeightWrap.appendChild(rowHeightInput);
-      actions.insertBefore(rowHeightWrap, closeBtn);
+      // Row Height is no longer user-configurable (per-item override column and
+      // this toolbar control were both removed) — every sheet uses the fixed
+      // BID_SHEET_ROW_HEIGHT_IN constant near printBiddingSheets() instead.
 
       const pbsBtn = mkBtn('Print Bid Sheets', printBiddingSheets);
       pbsBtn.classList.add('workflow-edit-btn');
@@ -11136,7 +11072,7 @@ async function testSamApiUrl() {
 <div id="app-footer">
   <div>&copy; 2026 <span id="footer-club-name">${getClub().name}</span> &nbsp;&middot;&nbsp; Knoxville, TN</div>
   <div><a href="mailto:etccwebsite.webmanager@gmail.com">etccwebsite.webmanager@gmail.com</a></div>
-  <div>Version: <span id="app-version">v6.2</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 28, 2026 1:26 PM</span></div>
+  <div>Version: <span id="app-version">v6.3</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 28, 2026 2:20 PM</span></div>
   <div>Website by Business Web Express &nbsp;&middot;&nbsp; <a href="mailto:info@businesswebexpress.com">info@businesswebexpress.com</a></div>
 </div>
 

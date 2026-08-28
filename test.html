@@ -2776,23 +2776,28 @@ function runAll() {
         'Verified: error_log("[CORS_VIOLATION] Blocked request from origin: ...")'),
     ]);
 
-    // ── Bid Sheet Bid Amount Algorithm (v3.1) ───────────────────────────────────
-    // Value: reserve_amount if present, else item_value
+    // ── Bid Sheet Bid Amount Algorithm — PREMIUM auctions (v3.1, updated v6.2) ──
+    // Superseded by the fuller "Bid Sheets — Open/Premium auction algorithm
+    // (v6.2)" suite further down (which is the one to extend for future bid-math
+    // changes), but kept as its own suite specifically for the linearity check
+    // (constant $/row, not compounding) that suite doesn't separately assert.
+    // Test values below are all PREMIUM-range (> the $35 Open Bids default) so
+    // this exercises the same code path as before Open Bids existed.
     // Starting bid: reserve_amount if present, else 30% of item_value
-    // Increment: 10% of Value if Value < $100, else 7% of Value if Value >= $100
-    // bidAmount[i] = round(startingBid + i * (Value * incPct))  — linear, not compounding
+    // Increment: 10% of Item Value if Value < $100, else 7% if Value >= $100
+    //   — the bracket AND the dollar amount both use Item Value, never reserve
+    // bidAmount[i] = round(startingBid + i * (ItemValue * incPct)) — linear, not compounding
     const computeBidAmounts = (itemValue, reserveAmount, bidCount) => {
       const reserveRaw   = parseFloat(String(reserveAmount || '0').replace(/[^0-9.]/g, '')) || 0;
       const itemValueRaw = parseFloat(String(itemValue || '0').replace(/[^0-9.]/g, '')) || 0;
-      const value = reserveRaw || itemValueRaw;
-      const startingBid = reserveRaw || (itemValueRaw * 0.30);
-      const incPct = value < 100 ? 0.10 : 0.07;
-      const incrementAmount = value * incPct;
+      const startingBid = reserveRaw > 0 ? reserveRaw : (itemValueRaw * 0.30);
+      const incPct = itemValueRaw >= 100 ? 0.07 : 0.10;
+      const incrementAmount = itemValueRaw * incPct;
       const amounts = [];
       for (let i = 0; i < bidCount; i++) amounts.push(Math.round(startingBid + i * incrementAmount));
       return amounts;
     };
-    renderSuite('Bid Sheet — Bid Amount Algorithm (v3.1)', [
+    renderSuite('Bid Sheet — Bid Amount Algorithm, PREMIUM auctions (v3.1, updated v6.2)', [
       assertEqual('$50 item, no reserve: starting bid = $15 (30% of value)',
         computeBidAmounts(50, 0, 20)[0], 15),
       assertEqual('$50 item, no reserve: increment = 10% of value ($5/row) since value < $100',
@@ -2803,8 +2808,8 @@ function runAll() {
         computeBidAmounts(200, 0, 20)[1] - computeBidAmounts(200, 0, 20)[0], 14),
       assertEqual('Reserve present: starting bid = reserve amount, not 30% of value',
         computeBidAmounts(100, 75, 20)[0], 75),
-      assertEqual('Reserve present: increment based on reserve as Value ($75 >= $100? no, so 10%)',
-        computeBidAmounts(100, 75, 20)[1] - computeBidAmounts(100, 75, 20)[0], 8), // round(75*0.10)=8 (rounded per-step diff)
+      assertEqual('Reserve present: increment based on Item Value ($100 >= $100 -> 7%), NOT the $75 reserve (v6.2 change)',
+        computeBidAmounts(100, 75, 20)[1] - computeBidAmounts(100, 75, 20)[0], 7), // round(100*0.07)=7 — was 8 (10% of the $75 reserve) before v6.2 moved the bracket/amount basis to Item Value
       assert('Increment is linear (constant $ per row), not compounding on prior row',
         (() => {
           const a = computeBidAmounts(200, 0, 5);
@@ -2825,28 +2830,33 @@ function runAll() {
         'Verified: <input id="add-item-description" maxlength="250">'),
     ]);
 
-    // ── Bid Sheet — Row Height Control (v3.1) ───────────────────────────────────
-    renderSuite('Bid Sheet — Row Height (Global + Per-Item) (v3.1)', [
-      assert('DEFAULT_SETTINGS includes bidRowHeight default of 0.28',
-        'Verified: bidRowHeight: 0.28 in DEFAULT_SETTINGS'),
-      assert('Header toolbar has editable Row Height (in) input',
-        'Verified: #bs-row-height-input on Step 2 toolbar, range 0.15-0.60'),
-      assert('Header row height default persists to database on first visit',
-        'Verified: if rawSettings.bidRowHeight === undefined, DB.saveSettings() called once'),
-      assert('Per-item Row Height column added after Date Loaded',
-        'Verified: <th>Row Height</th> is the 12th column in #bs-items-table'),
-      assert('Per-item row height initializes from item.bidRowHeight or header default',
-        'Verified: rowH = item.bidRowHeight ?? defaultRowHeight'),
-      assert('Per-item row height input auto-saves on change (no save button)',
-        'Verified: onchange="updateItemRowHeight(itemNumber, this.value)"'),
-      assert('updateItemRowHeight() clamps value between 0.15 and 0.60',
-        'Verified: v = Math.min(0.60, Math.max(0.15, v))'),
-      assert('Changing header default only cascades to rows still at the old default',
-        'Verified: effective === oldDefault check before clearing item.bidRowHeight override'),
-      assert('Rows with a different explicit override are left untouched on header change',
-        'Verified: items with effective !== oldDefault keep their bidRowHeight unchanged'),
-      assert('Print uses --row-h CSS custom property per sheet, falls back to global',
-        'Verified: .sheet style="--row-h:${itemRowH}in" / .bid-table td height: var(--row-h, ${rowHeight}in)'),
+    // ── Bid Sheet — Row Height became a fixed constant (v3.1 feature, REMOVED v6.2) ─
+    // The v3.1 Global + Per-Item Row Height feature this suite used to test
+    // (toolbar input, per-item override column, cascade-on-change logic) was
+    // entirely removed this session — replaced with a single fixed constant,
+    // no UI to change it. Rewritten rather than deleted so a future session
+    // sees explicitly that the old feature is gone, not just untested.
+    renderSuite('Bid Sheet — Row Height is now a fixed constant, not configurable (v6.2)', [
+      assert('Row height is BID_SHEET_ROW_HEIGHT_IN, a fixed JS constant', true,
+        'Verified: printBiddingSheets() declares const BID_SHEET_ROW_HEIGHT_IN = 0.40; const rowHeight = BID_SHEET_ROW_HEIGHT_IN; — no longer read from DB.getSettings().bidRowHeight'),
+      assert('The toolbar\'s "Row Height (in):" input was removed entirely', true,
+        'Verified: the rowHeightWrap/rowHeightLabel/rowHeightInput DOM construction and its change handler (including the per-item cascade-cleanup logic) are gone from the Create Bid Sheets toolbar setup'),
+      assert('The per-item Row Height column was removed from #bs-items-table', true,
+        'Verified: the <th>Row Height</th> header, its <col>, the <input class="bs-row-height"> per row, and the empty-state colspan (12->10, also accounting for the Date Loaded removal below) are all gone'),
+      assert('updateItemRowHeight() was deleted — no remaining callers', true,
+        'Verified: grep for updateItemRowHeight in index.html returns no matches after removal; it had no callers left once the column\'s onchange handler was removed'),
+      assert('DEFAULT_SETTINGS.bidRowHeight is orphaned, left in place per the "flag, don\'t delete" convention', true,
+        'Verified: the DEFAULT_SETTINGS entry and its explanatory comment remain (existing stored settings/items may still carry a stale value), but nothing reads or writes it anymore'),
+      assert('Print still uses --row-h CSS custom property per sheet, now always the same fixed value', true,
+        'Verified: .sheet style="--row-h:${rowHeight}in" / .bid-table td height: var(--row-h, ${rowHeight}in) — the property still exists structurally, it just no longer varies'),
+    ]);
+
+    // ── Create Bid Sheets table — "Date Loaded" column removed (v6.2) ───────────
+    renderSuite('Create Bid Sheets table — "Date Loaded" column removed (v6.2)', [
+      assert('Date Loaded header, column, and row cell removed from #bs-items-table', true,
+        'Verified: <th>Date Loaded</th>, its trailing <col style="width:130px;">, and the ${escHtml(item.loaded_date)} <td> in refreshBsItemsTable() are all gone; table min-width adjusted 1400px -> 1172px (via an intermediate 1300px after the Row Height removal) and the empty-state colspan went 12 -> 11 -> 10 across the two columns removed this session (Row Height, then Date Loaded)'),
+      assert('Underlying item.loaded_date data field is untouched', true,
+        'Verified: loaded_date is still set on item creation elsewhere in index.html — only its display in this particular table was removed, not the data itself'),
     ]);
 
     // ── Auction Save Persistence Fix (v3.1) ─────────────────────────────────────
@@ -3051,20 +3061,26 @@ function runAll() {
         'Verified: updateHomeAuctionPanel()/renderAuctionsList() are pure re-render functions that read from DB.getAuctions()/currentAuction() and are already called elsewhere (e.g. archiveAuction(), openAuction()) — calling them again after login is safe and idempotent, no new API calls or session state introduced'),
     ]);
 
-    // ── Bid Sheets — Open Bids category + strictly rising ladder (v6.0, updated v6.2) ─
+    // ── Bid Sheets — Open/Premium auction algorithm (v6.2, restated + fixed same session) ─
     // Local mirror of the amount math inside printBiddingSheets() (index.html).
     // Copied rather than imported because that function builds an entire print
     // document via openPrintWindow(); this exercises the arithmetic it depends on.
+    //
+    // FINAL algorithm (restated by the user this session, after two earlier
+    // revisions within the same session that are NOT what shipped — see the
+    // "reserve counts" suite below, which now documents the reversal):
+    //   - OPEN auction:  Item Value alone <= Open Bids threshold (reserve is
+    //     irrelevant to MEMBERSHIP). First bid = reserve if set, else $1. No
+    //     preprinted increment ladder — only row 1 is filled in.
+    //   - PREMIUM auction: Item Value > threshold. First bid = reserve if
+    //     set, else 30% of Value. Increment = 10% of Value if Value < $100,
+    //     7% of Value if Value >= $100 (both the bracket AND the increment
+    //     amount use Value, never the reserve).
     const bidLadder = (reserveRaw, itemValueRaw, openBidMax = 35, bidCount = 20) => {
-      const value = reserveRaw || itemValueRaw;
-      // v6.2: a reserve now counts toward the open-bid check too (previously
-      // any reserve disqualified an item outright) — see the dedicated
-      // "reserve counts toward Open Bids" suite below for the full rationale.
-      const openBidCheckAmt = reserveRaw > 0 ? reserveRaw : itemValueRaw;
-      const isOpenBid = openBidCheckAmt <= openBidMax;
+      const isOpenBid = itemValueRaw <= openBidMax;
       const startingBid = reserveRaw > 0 ? reserveRaw : (isOpenBid ? 1 : (itemValueRaw * 0.30));
-      const incPct = value < 100 ? 0.10 : 0.07;
-      const incrementAmount = isOpenBid ? 0 : value * incPct;
+      const incPct = itemValueRaw >= 100 ? 0.07 : 0.10;
+      const incrementAmount = isOpenBid ? 0 : itemValueRaw * incPct;
       const amounts = []; let prev = null;
       for (let i = 0; i < bidCount; i++) {
         let amt = Math.round(startingBid + i * incrementAmount);
@@ -3075,76 +3091,92 @@ function runAll() {
     };
     const strictlyRising = arr => arr.every((n, i) => i === 0 || n > arr[i - 1]);
 
-    renderSuite('Bid Sheets — Open Bids category + strictly rising ladder (v6.0, updated v6.2)', [
-      assert('Open-bid item = no reserve AND declared value at or below the Open Bids threshold',
+    renderSuite('Bid Sheets — Open/Premium auction algorithm (v6.2)', [
+      assert('OPEN auction: no reserve, Item Value at or below the Open Bids threshold',
         bidLadder(0, 25).isOpenBid === true && bidLadder(0, 35).isOpenBid === true,
-        'Verified: with no reserve, isOpenBid falls back to itemValueRaw <= openBidMax — the threshold is inclusive, so an item exactly at the $35 default still qualifies'),
-      assert('An item valued above the threshold is not open-bid',
+        'Verified: isOpenBid = itemValueRaw <= openBidMax — the threshold is inclusive, so an item exactly at the $35 default still qualifies'),
+      assert('PREMIUM auction: Item Value above the threshold, regardless of reserve',
         bidLadder(0, 36).isOpenBid === false && bidLadder(0, 40).isOpenBid === false,
-        'Verified: $36 with the $35 default falls outside the category and keeps the standard 30%-of-value starting bid'),
-      assert('Open-bid sheets with no reserve open at $1',
+        'Verified: $36/$40 with the $35 default fall outside the OPEN category and get the full preprinted PREMIUM ladder'),
+      assert('OPEN auction with no reserve opens at $1',
         bidLadder(0, 25).amounts[0] === 1,
-        'Verified: startingBid = 1 when reserveRaw is 0 for an open-bid item. printBiddingSheets() renders that $1 on row 1 only — rows 2-20 emit an empty <td> so bidders write their own amounts (no preprinted increment ladder)'),
-      assert('Setting Open Bids to 0 disables the category for every item with a declared value',
+        'Verified: startingBid = 1 when reserveRaw is 0 in the OPEN branch. printBiddingSheets() renders that $1 on row 1 only — rows 2-20 emit an empty <td> so bidders write their own amounts (no preprinted ladder)'),
+      assert('OPEN auction WITH a reserve opens at the reserve amount, not $1',
+        bidLadder(20, 25).isOpenBid === true && bidLadder(20, 25).amounts.slice(0, 2).join(',') === '20,21',
+        'Verified: reserve $20, value $25 (both <= $35) is OPEN, and opens at $20 (the reserve) — reserve decides the FIRST BID amount even for an OPEN item; it just never decides membership. Row 2\'s "21" comes from the strictly-rising +1 guard, not a real increment (incrementAmount is 0 for any OPEN item)'),
+      assert('PREMIUM auction increment bracket: Value < $100 -> 10%, Value >= $100 -> 7% (boundary is inclusive at $100)',
+        JSON.stringify(bidLadder(0, 99).amounts.slice(0, 3)) === JSON.stringify([30, 40, 50])
+        && JSON.stringify(bidLadder(0, 100).amounts.slice(0, 3)) === JSON.stringify([30, 37, 44]),
+        'Verified: $99 steps by $10 (10% of 99, rounded) but $100 steps by $7 — an item valued at exactly $100 now correctly gets the 7% bracket (incPct = itemValueRaw >= 100 ? 0.07 : 0.10). A prior version of this same feature used ">100" instead of ">=100" and put $100 in the wrong bracket'),
+      assert('PREMIUM increment is based on Item Value, never the reserve',
+        JSON.stringify(bidLadder(500, 600).amounts.slice(0, 4)) === JSON.stringify([500, 542, 584, 626]),
+        'Verified: reserve $500 / value $600 opens at $500 (the reserve) but increments by 7% of $600 = $42, not 7% of the $500 reserve (which would be $35) — both the bracket AND the dollar amount always use itemValueRaw'),
+      assert('Setting Open Bids to 0 disables the OPEN category for every item with a declared value',
         bidLadder(0, 25, 0).isOpenBid === false && bidLadder(0, 1, 0).isOpenBid === false,
-        'Verified: with openBidMax 0 nothing with a real value satisfies value <= 0. Note a $0/undeclared item still qualifies even at 0 (0 <= 0 holds) — which is the desirable outcome, since the alternative is the old sheet of 20 rows all reading $0. Settings saves blank/invalid input as 0 (same pattern as squarePct/squareFee), and only a missing setting falls back to the $35 default'),
-      assert('An item with neither value nor reserve falls into the open-bid category',
-        bidLadder(0, 0).isOpenBid === true,
-        'Verified: previously this produced a sheet with 20 rows all reading $0 (startingBid and increment both 0); it now opens at $1 with blank rows instead'),
+        'Verified: with openBidMax 0 nothing with a real value satisfies value <= 0. Note a $0/undeclared item still qualifies even at 0 (0 <= 0 holds) — the desirable outcome, since the alternative is a sheet of 20 rows all reading $0'),
+      assert('An item with neither value nor reserve falls into the OPEN category',
+        bidLadder(0, 0).isOpenBid === true && bidLadder(0, 0).amounts[0] === 1,
+        'Verified: previously (before Open Bids existed) this produced a sheet with 20 rows all reading $0; it now opens at $1 with blank rows instead'),
       assert('Every preprinted row is strictly larger than the one before it, across value/reserve combinations',
-        [[0,0],[0,1],[0,25],[0,34],[0,35],[0,36],[0,40],[0,99],[0,100],[0,150],[1,1],[2,3],[6,10],[14,20],[99,120],[500,600]]
+        [[0,0],[0,1],[0,25],[0,34],[0,35],[0,36],[0,40],[0,99],[0,100],[0,150],[1,1],[2,3],[6,10],[14,20],[25,50],[99,120],[500,600]]
           .every(([r, v]) => strictlyRising(bidLadder(r, v).amounts)),
-        'Verified: each row is forced to at least prevAmt + 1. This is the core guarantee — no two preprinted rows can ever show the same dollar figure'),
+        'Verified: each row is forced to at least prevAmt + 1. This is the core guarantee — no two preprinted rows can ever show the same dollar figure, regardless of how small a PREMIUM item\'s increment rounds to'),
       assert('Sub-$1 increments no longer collapse consecutive rows onto the same figure',
-        JSON.stringify(bidLadder(2, 3, 0).amounts.slice(0, 6)) === JSON.stringify([2,3,4,5,6,7]),
-        'Verified: a $2 reserve steps by 10% = $0.20, so Math.round() previously produced 2, 2, 2, 3, 3, 3 — multiple rows at an identical amount. The guard now yields 2, 3, 4, 5, 6, 7. Open Bids is forced to 0 (disabled) here on purpose — under the v6.2 rule a $2 reserve is itself open-bid at the $35 default, which skips the increment ladder (and this collapse) entirely; a low enough openBidMax is needed to reach the non-open-bid branch at all for such a small reserve'),
-      assert('Ladders that were already rising keep their exact previous amounts (no regression)',
-        JSON.stringify(bidLadder(0, 40).amounts.slice(0, 5)) === JSON.stringify([12,16,20,24,28])
-        && JSON.stringify(bidLadder(0, 150).amounts.slice(0, 6)) === JSON.stringify([45,56,66,77,87,98])
-        && JSON.stringify(bidLadder(500, 600).amounts.slice(0, 4)) === JSON.stringify([500,535,570,605]),
-        'Verified: the fix is a per-row guard rather than rounding the increment up globally, specifically so sheets whose increment already exceeded $1 are untouched — the $150 ladder even keeps its uneven 11/10/11/10 spacing from the 7% rate'),
+        JSON.stringify(bidLadder(2, 3, 0).amounts.slice(0, 6)) === JSON.stringify([2, 3, 4, 5, 6, 7]),
+        'Verified: a $2 reserve on a $3-value item steps by 10% of $3 = $0.30, so Math.round() alone would produce repeats — the strictly-rising guard forces 2, 3, 4, 5, 6, 7. Open Bids is forced to 0 (disabled) here specifically to reach the PREMIUM branch for such a low value, since $3 would otherwise be OPEN at the $35 default'),
+      assert('Ladders that were already rising keep their exact previous amounts (no regression from the strictly-rising guard)',
+        JSON.stringify(bidLadder(0, 40).amounts.slice(0, 5)) === JSON.stringify([12, 16, 20, 24, 28])
+        && JSON.stringify(bidLadder(0, 150).amounts.slice(0, 6)) === JSON.stringify([45, 56, 66, 77, 87, 98]),
+        'Verified: the strictly-rising fix is a per-row guard rather than rounding the increment up globally, so ladders whose increment already exceeded $1 are untouched — the $150 ladder even keeps its uneven 11/10/11/10 spacing from the 7% rate'),
     ]);
 
-    // ── Settings — "Open Bids" threshold (v6.0) ──────────────────────────────────
-    renderSuite('Settings — "Open Bids" threshold (v6.0)', [
+    // ── Bid Sheets — reserve does NOT decide OPEN/PREMIUM membership (v6.2, corrected) ─
+    // This session briefly shipped the opposite rule (a low reserve made an
+    // item OPEN even with a high Value) before a real bug report — item 800-1,
+    // Value $50/Reserve $25 — showed that rule printing a blank sheet for an
+    // item that should have been fully preprinted. Kept as its own suite (not
+    // folded into the main one above) specifically to document the reversal,
+    // since a future session finding "reserve counts toward Open Bids" in old
+    // commit history should not resurrect it.
+    renderSuite('Bid Sheets — reserve does NOT decide OPEN/PREMIUM membership (v6.2, corrected)', [
+      assert('A low reserve on an otherwise-expensive item does NOT make it OPEN',
+        bidLadder(25, 50).isOpenBid === false,
+        'Verified: reserve $25 (<= $35), value $50 (> $35) — this is item 800-1, the case that prompted the correction. Value alone decides membership; a superseded revision within this same session had reserve override Value here (reserve <= threshold -> OPEN), which incorrectly printed a blank sheet for a $50 item'),
+      assert('That item now prints a full PREMIUM ladder, starting at the reserve',
+        JSON.stringify(bidLadder(25, 50).amounts.slice(0, 4)) === JSON.stringify([25, 30, 35, 40]),
+        'Verified: starts at $25 (the reserve) then increments by 10% of the $50 value ($5/row) — a normal, fully preprinted PREMIUM sheet, not blank rows'),
+      assert('A reserve above the threshold still keeps an item PREMIUM (this part never changed)',
+        bidLadder(50, 60).isOpenBid === false && bidLadder(50, 60).amounts[0] === 50,
+        'Verified: reserve $50 / value $60, both above $35 — PREMIUM under every revision of this rule this session, since Value alone has always put this item above the threshold'),
+      assert('The threshold is inclusive on the Value path',
+        bidLadder(0, 35).isOpenBid === true && bidLadder(0, 36).isOpenBid === false,
+        'Verified: value exactly $35 (the default threshold) is OPEN; $36 is PREMIUM'),
+    ]);
+
+    // ── Settings — "Open Bids" threshold (v6.0, hint text updated v6.2) ──────────
+    renderSuite('Settings — "Open Bids" threshold (v6.0, hint text updated v6.2)', [
       assert('New openBidMax setting defaults to 35', true,
         'Verified: DEFAULT_SETTINGS gains openBidMax: 35, placed with the other bid-sheet defaults (startingBidPct / finalBidPct / bidCount)'),
       assert('Exposed in Settings > Auction Setup as "Open Bids"', true,
-        'Verified: #inp-open-bid-max number input added to the Auction Setup card directly below Bid Count, with a hint explaining that qualifying sheets open at $1 and print no increments'),
+        'Verified: #inp-open-bid-max number input in the Auction Setup card directly below Bid Count'),
+      assert('Hint text updated to describe Value-alone membership and the OPEN/PREMIUM terminology', true,
+        'Verified: "Maximum item value that counts as an \'open auction\' item (regardless of reserve). Those bid sheets preprint only the first bid — $1, or the reserve amount if set — with no increment ladder... Items above this value are \'premium auctions\' with every row preprinted." — replaces a now-inaccurate v6.0 hint that said "with no reserve set"'),
       assert('Loaded and saved alongside the other Auction Setup fields', true,
         'Verified: the settings render reads s.openBidMax ?? 35 into #inp-open-bid-max, and the save builder writes openBidMax: parseFloat(...) || 0 — the ?? preserves an explicit 0 rather than treating it as missing'),
-      assert('Blank or invalid input saves as 0, which turns the category off', true,
-        'Verified: parseFloat(\'\') is NaN so the || 0 fallback applies — matching how squarePct/squareFee already behave in the same object. An explicit 0 is the natural "disable" value and survives the round trip because DEFAULT_SETTINGS is merged with ?? not ||'),
+      assert('Blank or invalid input saves as 0, which turns the OPEN category off', true,
+        'Verified: parseFloat(\'\') is NaN so the || 0 fallback applies — matching how squarePct/squareFee already behave in the same object'),
     ]);
 
-    // ── Bid Sheets — a reserve now counts toward Open Bids (v6.2) ────────────────
-    renderSuite('Bid Sheets — a reserve now counts toward Open Bids (v6.2)', [
-      assert('An item WITH a reserve can now qualify as open-bid, if the reserve itself is <= the threshold',
-        bidLadder(20, 200).isOpenBid === true,
-        'Verified: reserve $20 / value $200 (threshold $35) is open-bid — v6.0 required reserveRaw === 0, which unconditionally excluded every reserved item regardless of how low the reserve was. That exclusion is gone: openBidCheckAmt now uses the reserve when one is set, else the declared value'),
-      assert('Open-bid items with a reserve open at the reserve amount, not $1',
-        JSON.stringify(bidLadder(20, 200).amounts.slice(0, 3)) === JSON.stringify([20, 21, 22]),
-        'Verified: startingBid = reserveRaw when reserveRaw > 0, even inside the open-bid branch — only a reserve-less open-bid item falls back to $1. No preprinted increment ladder either way (incrementAmount is 0 for any open-bid item), so 21/22 come from the strictly-rising +1 guard forcing distinct rows, not a real increment'),
-      assert('A reserve above the threshold still excludes the item from Open Bids, same as before',
-        bidLadder(50, 60).isOpenBid === false && bidLadder(50, 60).amounts[0] === 50,
-        'Verified: reserve $50 > $35 threshold keeps the item on the normal reserve/percentage path — reserve $50, value $60 opens at $50 with the standard increment ladder, exactly as v6.0 already behaved for any reserved item'),
-      assert('The threshold is inclusive on the reserve path too',
-        bidLadder(35, 500).isOpenBid === true && bidLadder(36, 500).isOpenBid === false,
-        'Verified: reserve exactly $35 (the default threshold) still qualifies as open-bid and opens at $35; reserve $36 does not. Matches the existing inclusive behavior already verified for the no-reserve/value path above'),
-      assert('starting-bid-list.php was updated with the identical reserve-counts rule', true,
-        'Verified: $openBidCheckAmt = $reserve > 0 ? $reserve : $value; $isOpenBid = $openBidCheckAmt <= $openBidMax; $startingBid = $reserve > 0 ? $reserve : ($isOpenBid ? 1 : $value * $startingBidPct / 100) — same shape as the JS, keeping the two implementations in sync per the header comment\'s cross-reference'),
-    ]);
-
-    // ── Starting Bid List — open-bid alignment (v6.0, updated v6.2) ──────────────
-    renderSuite('Starting Bid List — matches the bid sheets on open bids (v6.0, updated v6.2)', [
-      assert('starting-bid-list.php applies the same open-bid rule as the bid sheets', true,
-        'Verified: $openBidCheckAmt = $reserve > 0 ? $reserve : $value; $isOpenBid = $openBidCheckAmt <= $openBidMax; $startingBid = $reserve > 0 ? $reserve : ($isOpenBid ? 1 : ($value * $startingBidPct / 100)) — every ternary is explicitly parenthesized, which PHP 8 requires for nested ternaries'),
+    // ── Starting Bid List — matches the bid sheets on Open/Premium (v6.0, corrected v6.2) ─
+    renderSuite('Starting Bid List — matches the bid sheets on Open/Premium (v6.2)', [
+      assert('starting-bid-list.php applies the same Value-alone membership rule', true,
+        'Verified: $isOpenBid = $value <= $openBidMax; $startingBid = $reserve > 0 ? $reserve : ($isOpenBid ? 1 : ($value * $startingBidPct / 100)) — reserve no longer participates in the membership check, only in the starting-bid formula, matching the corrected JS rule'),
       assert('Reads openBidMax from sam_settings with the same 0-disables semantics', true,
-        'Verified: isset($settings[\'openBidMax\']) && $settings[\'openBidMax\'] !== \'\' — strict !== means an integer 0 passes through as 0 (category off) and only a missing/blank value falls back to 35, matching the app\'s ?? behavior'),
+        'Verified: isset($settings[\'openBidMax\']) && $settings[\'openBidMax\'] !== \'\' — strict !== means an integer 0 passes through as 0 (category off) and only a missing/blank value falls back to 35'),
       assert('Parses the stored setting through the same money-stripping as reserve/value', true,
         'Verified: (float)preg_replace(\'/[^0-9.]/\', \'\', ...) mirrors the JS parseMoney() helper, so a setting stored as "$35.00" resolves to 35 rather than 0'),
-      assert('Header comment cross-references printBiddingSheets() as the file to stay in sync with', true,
-        'Verified: the two starting-bid computations now live in different languages and files, so the PHP header explicitly names index.html\'s printBiddingSheets() — without that the list would silently drift from the printed sheet again. Updated in v6.2 to describe the reserve-counts-too rule'),
+      assert('Header comment describes Open/Premium terminology and notes this page has no increment ladder to keep in sync', true,
+        'Verified: the header comment now names "Open auction"/"Premium auction" explicitly and notes this page only ever prints the first bid, so it doesn\'t need the 10%/7% bracket logic printBiddingSheets() uses for PREMIUM sheets — only the membership/first-bid formula has to match'),
     ]);
 
     // ── Nav — Developer row keeps the drawer open (v6.0) ─────────────────────────
@@ -3189,6 +3221,26 @@ function runAll() {
         'Verified: deliberately kept to one Club Favicon URL control rather than adding a second field — the existing branding image is reused for both rel="icon" and rel="apple-touch-icon"'),
       assert('Known limitation: the current default image is 150x116px and non-square, below Apple\'s 180x180 square guidance', true,
         'Verified: Images/ETCClogoWhiteBackground.png\'s dimensions were checked directly from its PNG IHDR chunk (150x116). No image-editing tooling (ImageMagick/sharp/canvas) was available in this environment to produce a properly sized square icon, so iOS may crop/pad the image imperfectly — it will now show something rather than nothing, but a dedicated 180x180+ square PNG would look sharper if the club supplies one'),
+    ]);
+
+    // ── Bid Sheet — fixed-height Description/Category-Donor-Value boxes (v6.2) ──
+    // Requested from a screenshot showing a 4-line Description and a 2-line
+    // Category/Donor/Value row on a real printed sheet — every sheet should use
+    // that same fixed layout regardless of content length, so sheets look
+    // uniform whether printed individually or as a batch.
+    renderSuite('Bid Sheet — fixed-height Description/info boxes (v6.2)', [
+      assert('Description box is a fixed height sized for 4 lines', true,
+        'Verified: the Description <div> carries height:0.92in (computed from the box\'s 16.8px font-size and 1.2 line-height, plus padding/border) with box-sizing:border-box and overflow:hidden — a hard height, not min-height, so it never grows regardless of content'),
+      assert('Category/Donor/Value(/Reserve) row is a fixed height sized for 2 lines', true,
+        'Verified: the grid container carries height:0.50in, grid-auto-rows:0.50in, overflow:hidden, and box-sizing:border-box; each cell additionally has line-height:1.2 (not previously set) and its own overflow:hidden'),
+      assert('Root cause of a real overflow bug: the grid container needed its OWN overflow:hidden, not just each child', true,
+        'Verified: setting height:0.50in on the CSS grid container alone was insufficient — the implicit auto-sized row track still grew to fit the tallest cell\'s natural content (a 3-line donor address, "Wilderness Trail Distillery, Attn. Grayson Yaden", bled into the bid table header row below it). grid-auto-rows:0.50in plus overflow:hidden on the container itself fixed it; each cell\'s own overflow:hidden alone did not stop the container from growing'),
+      assert('Content beyond the fixed height is now genuinely clipped, not truncated by character count', true,
+        'Verified: descSheet (the on-sheet description) is still the full, untruncated string — visual clipping happens via CSS overflow:hidden on the fixed-height box, not by slicing the string in JS. The separate label-page still shows up to 700 chars since that page has no height constraint'),
+      assert('page-break-inside simplified to always "avoid" now that sheet height is fully fixed', true,
+        'Verified: sheetBreak = \'avoid\' unconditionally — previously it switched to \'auto\' past 400 description characters specifically because a growing description box could overflow the page and hang Chrome\'s print layout retrying "avoid". Since every box on the sheet is now fixed-height, the sheet\'s total height can no longer grow, so that risk no longer exists'),
+      assert('Row Height was changed from 0.28in to 0.40in to better fill the printed page', true,
+        'Verified: BID_SHEET_ROW_HEIGHT_IN = 0.40 (was 0.28) — at 20 rows that\'s 8in of bid-table height alone, plus the fixed 0.92in description + 0.50in info row + header, requested explicitly to fill more of the page'),
     ]);
 
     // Clear test data
