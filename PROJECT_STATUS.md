@@ -1,6 +1,6 @@
 # SAM Project Status
 
-**Last updated:** 2026-08-28 — **checkpoint v6.4**, the tail end of a long multi-checkpoint session (v6.1→v6.4) that restated the entire bid sheet algorithm around **OPEN vs. PREMIUM auctions** (decided by Item Value alone, after a mid-session detour where reserve briefly decided membership and had to be reversed following a real bug), gave every bid sheet a fully fixed-height layout, removed the Row Height and Date Loaded columns from Create Bid Sheets, added an iOS `apple-touch-icon`, and fixed two donor-name overflow / table-height bugs found by the user reviewing live screens. **Read the "Bid sheet algorithm" note in open item #6 below before touching `printBiddingSheets()` or `starting-bid-list.php` again — the rule changed twice in one session and the final version is easy to get wrong from memory.**
+**Last updated:** 2026-08-28, later same-day — **checkpoint v6.5**: fixed the standalone Items Not Won report's Item # and Donor Phone columns wrapping onto two lines (`white-space:nowrap`). Small, single-topic follow-up on top of the same-day v6.1→v6.4 arc below, which is still the important read — it restated the entire bid sheet algorithm around **OPEN vs. PREMIUM auctions** (decided by Item Value alone, after a mid-session detour where reserve briefly decided membership and had to be reversed following a real bug), gave every bid sheet a fully fixed-height layout, removed the Row Height and Date Loaded columns from Create Bid Sheets, added an iOS `apple-touch-icon`, and fixed two donor-name overflow / table-height bugs found by the user reviewing live screens. **Read the "Bid sheet algorithm" note in open item #6 below before touching `printBiddingSheets()` or `starting-bid-list.php` again — the rule changed twice in one session and the final version is easy to get wrong from memory.**
 
 This file exists so a brand-new Claude Code session can resume this work with zero prior conversation context. Read this alongside `CLAUDE.md` (architecture/rules) before touching code.
 
@@ -8,11 +8,11 @@ This file exists so a brand-new Claude Code session can resume this work with ze
 
 ## Current state (as of this doc)
 
-- **Deployed version:** **v6.4** (`index.html` footer `#app-version`) — deployed code matches the latest checkpoint commit, no drift.
-- **Git:** `main` branch, last commit `35ae34f` ("Checkpoint v6.4: Bid Sheets table donor wrap fix, Registrations table height"), pushed to `origin` (https://github.com/ETCCRepo/ETCCSAM.git). Working tree is clean.
-- **Regression suite (`test.html`) was updated across all four checkpoints this session and confirmed green by the user** before each one.
+- **Deployed version:** **v6.5** (`index.html` footer `#app-version`) — deployed code matches the latest checkpoint commit, no drift.
+- **Git:** `main` branch, last commit `7636b2c` ("Checkpoint v6.5: Items Not Won report - Item # / Donor Phone stay on one line"), pushed to `origin` (https://github.com/ETCCRepo/ETCCSAM.git). Working tree is clean.
+- **Regression suite (`test.html`) was updated at every checkpoint this session (v6.1 through v6.5) and confirmed green by the user** before each one.
 - **No uncommitted app-code work** as of this doc.
-- **Note on version bumping this session:** `/ETCCSAMCheckpoint v6.0` (an explicit version argument) was correctly interpreted as a requested major bump earlier in this multi-day arc. Later in **this** session, `/ETCCSAMCheckpoint` (no argument) was run and a major bump to v7.0 was applied by mistake — the assistant caught it, reverted to v6.3 (correct minor bump from v6.2) before committing, and no v7.0 was ever pushed or deployed. Worth knowing only because it means version history has no v7.0 gap to explain if noticed later — it never left the working tree.
+- **Note on version bumping earlier in this session:** `/ETCCSAMCheckpoint v6.0` (an explicit version argument) was correctly interpreted as a requested major bump earlier in this multi-day arc. Later in this session, `/ETCCSAMCheckpoint` (no argument) was run and a major bump to v7.0 was applied by mistake — the assistant caught it, reverted to v6.3 (correct minor bump from v6.2) before committing, and no v7.0 was ever pushed or deployed. Worth knowing only because it means version history has no v7.0 gap to explain if noticed later — it never left the working tree.
 
 ### ⚠️ Open items carried into the next session
 
@@ -27,6 +27,29 @@ This file exists so a brand-new Claude Code session can resume this work with ze
 9. **The "Bidders: 17 vs. 25" Home/Registrations mismatch (v5.4 session) was explained but never confirmed fixed.** Not touched again this session — still open if it resurfaces.
 10. **Bid sheet row height is now `BID_SHEET_ROW_HEIGHT_IN = 0.40` in `printBiddingSheets()`**, a hardcoded JS constant with no UI to change it (the v3.1-era per-item override column and toolbar control were both removed this session). If a future request wants it configurable again, that's new work, not a revert — the old mechanism (`updateItemRowHeight()`, `#bs-row-height-input`, the per-item cascade-on-change logic) no longer exists in the codebase at all, only in git history.
 11. **Two donor-name overflow bugs and one table-height bug were found by the user reviewing live screens this session** (not from code review) — worth remembering that pattern: `#items-table`'s fix didn't automatically cover `#bs-items-table` because they have entirely separate row-rendering functions (`refreshItemsTable()` vs. `refreshBsItemsTable()`), and the Registrations table's `calc(100vh - 388px)` was a silent outlier compared to every sibling screen's `calc(100vh - 278px)`. If another table shows a similar overflow or excessive-whitespace symptom, check for this same "fix applied to one twin table but not the other" pattern first.
+
+---
+
+## What was accomplished this session (checkpoint v6.5)
+
+Small, single-topic follow-up in the same day as v6.1→v6.4 below — the user pointed out a real overflow issue on a report screen not touched earlier in this session.
+
+### 1. Real bug — Items Not Won report's Item # and Donor Phone columns wrapped onto two lines
+**Symptom (from a screenshot):** on the standalone "Items Not Won" print report (`printItemsNotWonReport()` in `index.html`, ~line 8750), the "Item #" header wrapped to "Item" / "#" and "Donor Phone" wrapped to "Donor" / "Phone" — the narrow columns didn't have room for the two-word labels on one line, and phone number values in the data rows could wrap too.
+
+**Fix:** added `style="white-space:nowrap;"` to both the `<th>` header cells and the corresponding `<td>` data cells for Item # and Donor Phone. Left Description, Category, Donor Name, and Donor Email untouched — those are meant to wrap.
+
+### 2. `test.html` updated, confirmed green
+New suite `'Items Not Won report — Item # / Donor Phone no longer wrap (v6.5)'` (3 assertions covering the header fix, the data-cell fix, and that unrelated columns were left alone). Deployed via `.\deploy.ps1 test.html`, confirmed green by the user before the checkpoint.
+
+### 3. Checkpoint v6.5 (minor version bump)
+Straightforward minor bump from v6.4 via `.\bump-version.ps1` (no `-Major` requested).
+
+### Files touched this session
+| File | Status | Notes |
+|---|---|---|
+| `index.html` | committed (`7636b2c`) | `white-space:nowrap` added to Item # / Donor Phone header + data cells in the Items Not Won report; version bump to v6.5 |
+| `test.html` | committed (`7636b2c`) | 1 new suite / 3 assertions. Confirmed green by the user. |
 
 ---
 
