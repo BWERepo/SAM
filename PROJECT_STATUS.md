@@ -1,6 +1,6 @@
 # SAM Project Status
 
-**Last updated:** 2026-08-27, later same-day session — **checkpoint v6.1**: unified the favicon fallback, which previously had two disagreeing hardcoded defaults (`updateFavicon()`'s own `ETCC-Logo.ico` vs. `getClub()`'s `ETCClogoWhiteBackground.png`) that could each win depending on load order. `updateFavicon()` now defers to `getClub().favicon` as the single source of truth. `test.html` updated, confirmed green by the user, checkpointed. This is on top of the same-day v6.0 session below (Open Bids category, rising bid ladder, login/nav fixes) — read that write-up too if picking this up cold.
+**Last updated:** 2026-08-28 — **checkpoint v6.4**, the tail end of a long multi-checkpoint session (v6.1→v6.4) that restated the entire bid sheet algorithm around **OPEN vs. PREMIUM auctions** (decided by Item Value alone, after a mid-session detour where reserve briefly decided membership and had to be reversed following a real bug), gave every bid sheet a fully fixed-height layout, removed the Row Height and Date Loaded columns from Create Bid Sheets, added an iOS `apple-touch-icon`, and fixed two donor-name overflow / table-height bugs found by the user reviewing live screens. **Read the "Bid sheet algorithm" note in open item #6 below before touching `printBiddingSheets()` or `starting-bid-list.php` again — the rule changed twice in one session and the final version is easy to get wrong from memory.**
 
 This file exists so a brand-new Claude Code session can resume this work with zero prior conversation context. Read this alongside `CLAUDE.md` (architecture/rules) before touching code.
 
@@ -8,22 +8,135 @@ This file exists so a brand-new Claude Code session can resume this work with ze
 
 ## Current state (as of this doc)
 
-- **Deployed version:** **v6.1** (`index.html` footer `#app-version`) — deployed code matches the latest checkpoint commit, no drift.
-- **Git:** `main` branch, last commit `be653c4` ("Checkpoint v6.1: unify the favicon fallback"), pushed to `origin` (https://github.com/ETCCRepo/ETCCSAM.git). Working tree is clean.
-- **Regression suite (`test.html`) was updated this session and confirmed green by the user** before the v6.1 checkpoint.
+- **Deployed version:** **v6.4** (`index.html` footer `#app-version`) — deployed code matches the latest checkpoint commit, no drift.
+- **Git:** `main` branch, last commit `35ae34f` ("Checkpoint v6.4: Bid Sheets table donor wrap fix, Registrations table height"), pushed to `origin` (https://github.com/ETCCRepo/ETCCSAM.git). Working tree is clean.
+- **Regression suite (`test.html`) was updated across all four checkpoints this session and confirmed green by the user** before each one.
 - **No uncommitted app-code work** as of this doc.
+- **Note on version bumping this session:** `/ETCCSAMCheckpoint v6.0` (an explicit version argument) was correctly interpreted as a requested major bump earlier in this multi-day arc. Later in **this** session, `/ETCCSAMCheckpoint` (no argument) was run and a major bump to v7.0 was applied by mistake — the assistant caught it, reverted to v6.3 (correct minor bump from v6.2) before committing, and no v7.0 was ever pushed or deployed. Worth knowing only because it means version history has no v7.0 gap to explain if noticed later — it never left the working tree.
 
 ### ⚠️ Open items carried into the next session
 
-1. **The settings-password "corrupted again" investigation from several sessions ago is still not conclusively closed.** The working theory (a transcription/autofill issue at the password prompt, not a code bug) was never confirmed — the user was given a console snippet to bypass manual typing and confirm it, but no result was ever reported. If it resurfaces, start by asking whether that bypass test was ever tried, rather than re-diagnosing from scratch.
-2. **`api.php`/`add-item.php` deploys via `deploy.ps1` have been intermittently unreliable in past sessions** (`curl: (56)`/`curl: (18) ... got 450`) — manual upload via Hostinger File Manager is the fallback that has worked. This session's `deploy.ps1` calls all reported success with no retries needed, but keep verifying with a diff/marker check if a deploy ever looks suspicious.
-3. **The Gmail-scan workflow's UI is hidden (`display:none`), not deleted**, and a large amount of supporting JS (OAuth token handling, inbox scanning, `parseEmailBody()`/`DEFAULT_FIELD_MAP`-driven parsing) remains in `index.html`, unreferenced by any visible UI. It couldn't be fully removed because the **Gmail OAuth Settings card is still load-bearing** — it configures the same Gmail API connection used by the currently-working **Announce Winners → Email Winners** feature (`sendWinnerEmails()` → `sendEmailsViaGmail()`). A future session could cleanly split "Gmail auth for sending" from "Gmail scanning for inbox import" if the scanning code is ever confirmed permanently dead.
-4. **`donate-item.php` remains fully removed** (unchanged from prior sessions) — `add-item.php` is the only item-donation entry point. Its old SQL-side backend (`donated_items_pending` table, `get_pending_donations`/`mark_donations_imported` in `api.php`) is still there, unused, per the same convention.
-5. **`starting-bid-list.php` has no password gate**, matching `add-item.php`'s convention — anyone with the URL can view the full donated-items list with donor names and starting bids. This was not explicitly discussed as a security tradeoff; flag it if the club raises privacy concerns about donor names being publicly listable.
-6. **⚠️ The starting-bid calculation now exists in TWO places that must be kept in sync** (new in v6.0): `printBiddingSheets()` in `index.html` (JS) and `starting-bid-list.php` (PHP). Both implement the same three-branch rule — open-bid → $1, else reserve if set, else value × Starting Bid %. A comment at the top of the PHP file cross-references the JS function. **If you change the bid math, change both**, or the printed sheet will silently contradict the Starting Bid List — which is exactly the drift the v6.0 session had to correct.
-7. **PHP files cannot be syntax-checked locally** — `php` is not on PATH in this environment (`php -l` fails with "command not found"). Edits to `starting-bid-list.php` / `add-item.php` / `api.php` are verified by inspection only, then confirmed by loading the live page. Be especially careful with PHP 8 rules that older PHP tolerated — e.g. **nested ternaries must be explicitly parenthesized** or the file fatals on load.
-8. **A near-duplicate of `add-item.php` was created and fully removed in the v5.1 session** (`silent-auction-form.php` — see that session's write-up below). If a future request sounds like "make a public version of the item donation form without the member picker," check this history first rather than rebuilding from scratch, since the exact diff needed (remove `etccMemberName`/`memberEmail` from validation, DB write, confirmation email, and the HTML form/JS) is already documented below.
-9. **The "Bidders: 17 vs. 25" Home/Registrations mismatch (v5.4 session) was explained but not confirmed fixed.** The user was asked to hard-refresh and re-compare Home vs. the Registrations screen; no confirmation came back before that session ended. If raised again, check whether it's simply the "Home tile only refreshes on `navigate('home')`" staleness, or genuine sync drift between localStorage and the MySQL backend (`[[project_data_sync_architecture]]`) — don't assume it's resolved. See the v5.4 write-up below for the full diagnosis.
+1. **The settings-password "corrupted again" investigation from several sessions ago is still not conclusively closed.** The working theory (a transcription/autofill issue at the password prompt, not a code bug) was never confirmed. If it resurfaces, start by asking whether the bypass test was ever tried, rather than re-diagnosing from scratch.
+2. **`api.php`/`add-item.php` deploys via `deploy.ps1` have been intermittently unreliable in past sessions** (`curl: (56)`/`curl: (18) ... got 450`) — manual upload via Hostinger File Manager is the fallback that has worked. This session's deploys (including `.php` files) all reported success first try, but keep verifying with a diff/marker check if one ever looks suspicious.
+3. **The Gmail-scan workflow's UI is hidden (`display:none`), not deleted**, and a large amount of supporting JS remains in `index.html`, unreferenced by any visible UI. Couldn't be fully removed because the **Gmail OAuth Settings card is still load-bearing** for **Announce Winners → Email Winners** (`sendWinnerEmails()` → `sendEmailsViaGmail()`).
+4. **`donate-item.php` remains fully removed** — `add-item.php` is the only item-donation entry point. Its old SQL-side backend is still there in `api.php`, unused, per the "flag, don't delete" convention.
+5. **`starting-bid-list.php` has no password gate**, matching `add-item.php`'s convention — anyone with the URL can view the full donated-items list with donor names and starting bids. Not explicitly discussed as a security tradeoff; flag it if the club raises privacy concerns.
+6. **⚠️ Bid sheet algorithm — read this before changing `printBiddingSheets()` or `starting-bid-list.php`.** The two computations live in different files/languages (`index.html` JS, `starting-bid-list.php` PHP) and must be kept in sync — a header comment in the PHP file cross-references the JS function. The **current, final rule** (as of v6.3, unchanged in v6.4): every item is either an **OPEN auction** (Item Value alone — never reserve — is ≤ Settings → Auction Setup → "Open Bids", default $35) or a **PREMIUM auction** (Value above that). OPEN preprints only the first bid (reserve if set, else $1) with blank rows after; PREMIUM preprints all 20 rows, first bid = reserve if set else 30% of Value, increment = 10% of Value if Value < $100 else 7% if Value ≥ $100 (bracket boundary is `>=`, not `>` — a real bug fixed this session). **Reserve never decides OPEN vs. PREMIUM membership** — a mid-session revision briefly let a low reserve make an expensive item OPEN, and it shipped in v6.2 before a real bug report (item 800-1: Value $50/Reserve $25 printing a blank sheet) reversed it back to Value-alone in v6.3. `test.html` has a suite specifically documenting that reversal so it isn't accidentally resurrected from old commit history or a stale conversation summary.
+7. **PHP files cannot be syntax-checked locally** — `php` is not on PATH in this environment (`php -l` fails with "command not found"). Edits to `.php` files are verified by inspection only, then confirmed by loading the live page. PHP 8's nested-ternary parenthesization requirement has bitten this project before — watch for it.
+8. **A near-duplicate of `add-item.php` was created and fully removed in the v5.1 session** (`silent-auction-form.php`). If a future request sounds like "a public item-donation form without the member picker," check that session's history first.
+9. **The "Bidders: 17 vs. 25" Home/Registrations mismatch (v5.4 session) was explained but never confirmed fixed.** Not touched again this session — still open if it resurfaces.
+10. **Bid sheet row height is now `BID_SHEET_ROW_HEIGHT_IN = 0.40` in `printBiddingSheets()`**, a hardcoded JS constant with no UI to change it (the v3.1-era per-item override column and toolbar control were both removed this session). If a future request wants it configurable again, that's new work, not a revert — the old mechanism (`updateItemRowHeight()`, `#bs-row-height-input`, the per-item cascade-on-change logic) no longer exists in the codebase at all, only in git history.
+11. **Two donor-name overflow bugs and one table-height bug were found by the user reviewing live screens this session** (not from code review) — worth remembering that pattern: `#items-table`'s fix didn't automatically cover `#bs-items-table` because they have entirely separate row-rendering functions (`refreshItemsTable()` vs. `refreshBsItemsTable()`), and the Registrations table's `calc(100vh - 388px)` was a silent outlier compared to every sibling screen's `calc(100vh - 278px)`. If another table shows a similar overflow or excessive-whitespace symptom, check for this same "fix applied to one twin table but not the other" pattern first.
+
+---
+
+## What was accomplished this session (checkpoint v6.4)
+
+Small follow-up found by the user reviewing live screens right after the v6.3 checkpoint — the same donor-name overflow bug fixed on the Donated Items table earlier in this session had a twin on a different table, and a page-height inconsistency on Registrations.
+
+### 1. Real bug — Donor Name/Email overflow recurred on the Create Bid Sheets table
+**Symptom:** the same visual overflow already fixed earlier this session on `#items-table` (Donated Items) reappeared on `#bs-items-table` (Create Bid Sheets) for the same item (900-1, "Wilderness Trail Distillery, Attn. Grayson Yaden").
+
+**Root cause:** the two tables have **entirely separate row-rendering functions** (`refreshItemsTable()` vs. `refreshBsItemsTable()`) — fixing one's Donor Name/Email `<td>` styling doesn't touch the other's.
+
+**Fix:** added the same `white-space:normal;word-break:break-word;vertical-align:top` to `refreshBsItemsTable()`'s donorName/donorEmail cells (`index.html:6053-6054`). Also checked `printDonatedItemsList()` (the standalone "🖨 Print" page) — it uses default (non-`table-layout:fixed`) table layout, so it isn't exposed to this bug class at all and needed no change.
+
+### 2. Real bug — Registrations table subtracting ~110px more than sibling screens
+**Symptom:** the Registrations table (32 bidders) showed noticeably fewer rows before scrolling than comparable screens, with unexplained empty space below the card.
+
+**Root cause:** `#bidders-card`'s scroll container used `max-height:calc(100vh - 388px)`, while every structurally similar screen (Winning Bidders, Create Bid Sheets, Payments) uses `calc(100vh - 278px)` — despite those screens having comparable extra content above their tables (e.g. Winning Bidders' save-note bar vs. Registrations' metric-row). No comment explained the 388px figure; it was a silent outlier.
+
+**Fix:** matched the established `278px` convention rather than guessing a new number (`index.html:1255`).
+
+### 3. `test.html` updated, confirmed green
+New suite `'Create Bid Sheets table — Donor Name/Email wrap fix (v6.4)'` (2 assertions) and `'Registrations table — scroll height matched to sibling screens (v6.4)'` (2 assertions).
+
+### Files touched this session
+| File | Status | Notes |
+|---|---|---|
+| `index.html` | committed (`35ae34f`) | `#bs-items-table` donor wrap fix; `#bidders-card` scroll height 388px→278px; version bump to v6.4 |
+| `test.html` | committed (`35ae34f`) | 2 new suites / 4 assertions. Confirmed green by the user. |
+
+---
+
+## What was accomplished this session (checkpoint v6.3)
+
+The largest single checkpoint of this multi-day arc — the bid sheet algorithm was restated from scratch by the user, went through a mid-session revision that turned out wrong, got corrected by a real bug report, and the printed sheet's layout was overhauled to a fully fixed-height design. Three test suites had gone stale or actively wrong by the end and were rewritten, not just added to.
+
+### 1. Bid sheet algorithm restated as OPEN vs. PREMIUM auctions
+The user restated the entire algorithm explicitly (quoted here since it's the rule now in force):
+
+> First a bid sheet is either for an **open auction** (Value ≤ $35.00) or a **premium auction** (Value > $35.00). Open auction: only the first bid is preprinted — $1 with no reserve, or the reserve when present. Premium auction: all bids preprinted — first bid is the reserve when present or 30% of value when no reserve; increment is 10% of value if value < $100, 7% if value ≥ $100.
+
+Implemented in `printBiddingSheets()` (`index.html`) with `isOpenBid`/`startingBid`/`incPct` variables named to match this terminology directly, replacing several sessions' worth of accumulated ad-hoc comments. **Caught and fixed a real boundary bug while rewriting**: the old code used `Value > $100 → 7%`; the user's restatement is `Value ≥ $100 → 7%`. An item valued at exactly $100 was getting the wrong bracket before this fix.
+
+### 2. Mid-session revision, then a reversal (important — read if touching this code)
+Before landing on the above, this session went through **two prior revisions of "what counts as OPEN"** within the same conversation:
+1. **v6.0** (previous checkpoint): OPEN required *no reserve at all* — any reserve excluded an item outright, regardless of value.
+2. **A revision partway through this session**: a reserve counted toward the OPEN check too — an item was OPEN if `(reserve if set, else value) <= threshold`. This shipped as part of the v6.2 checkpoint.
+3. **This session's correction**: a live bug report — item 800-1, Value $50 (above the $35 threshold) but Reserve $25 (below it) — printed a **blank** OPEN-style sheet under rule #2, when the user expected a normal, fully preprinted sheet since the item's actual value was well above the threshold. The user confirmed explicitly: **Value alone decides OPEN vs. PREMIUM membership**; reserve only ever affects the *first bid amount*, never membership. Rule #2 was reverted.
+
+`test.html` now carries a suite specifically titled to document this reversal (`'Bid Sheets — reserve does NOT decide OPEN/PREMIUM membership (v6.2, corrected)'`) so a future session reading old commits or a stale summary doesn't resurrect rule #2.
+
+### 3. `starting-bid-list.php` updated to match, each time
+Both the reserve-counts revision and its reversal were mirrored into `starting-bid-list.php` in the same sessions they happened in JS, keeping the two files in sync throughout (per the standing convention documented in open item #6 above).
+
+### 4. Bid sheet layout — fixed-height Description and Category/Donor/Value/Reserve boxes
+Requested from a screenshot of a real printed sheet showing a 4-line Description box and a 2-line Category/Donor/Value row — the user wanted every sheet to use that same fixed layout regardless of content length.
+
+- **Description box**: `height:0.92in` (computed from the box's 16.8px font / 1.2 line-height + padding/border), `overflow:hidden`, `box-sizing:border-box`. Hard `height`, not `min-height` — the user explicitly asked for fixed values, not a content-driven minimum.
+- **Category/Donor/Value/Reserve row**: `height:0.50in` on the CSS grid container, plus explicit `line-height:1.2` on each cell (not previously set).
+- **Real bug found and fixed mid-implementation**: setting `height:0.50in` on the grid container alone wasn't enough — its implicit `auto`-sized row track still grew to fit the tallest cell's natural content, and a 3-line donor address ("Wilderness Trail Distillery, Attn. Grayson Yaden") bled into the bid table's header row below it, even though each cell already had its own `overflow:hidden`. Fixed by adding `grid-auto-rows:0.50in` **and** `overflow:hidden` **on the container itself** — a child's own overflow:hidden doesn't stop its grid container from growing.
+- Simplified `page-break-inside` to always `'avoid'` (previously switched to `'auto'` past 400 description characters to avoid a Chrome print-layout hang) — now that every box is fixed-height, the sheet's total height can never grow, so that risk no longer exists.
+- **Row height raised 0.28in → 0.40in** ("to better fill the page" — this became the v6.4-adjacent `BID_SHEET_ROW_HEIGHT_IN` constant, see below).
+
+### 5. Removed: per-item Row Height column + toolbar control (Create Bid Sheets table)
+Per explicit user request ("remove row height from each row and header", then "eliminate the toolbar's single global Row Height (in) control" as a follow-up in the same turn):
+- Removed `<th>Row Height</th>`, its `<col>`, the per-row `<input class="bs-row-height">`, and `updateItemRowHeight()` (no remaining callers).
+- Removed the entire toolbar `rowHeightWrap`/`rowHeightInput` construction and its change handler, including the per-item cascade-cleanup logic that only existed to service the now-gone override.
+- Replaced with a single fixed JS constant, `BID_SHEET_ROW_HEIGHT_IN` (0.28, later changed to 0.40 per item 4 above), read nowhere from Settings.
+- `DEFAULT_SETTINGS.bidRowHeight` left in place, flagged as orphaned in a comment (existing stored settings/items may still carry the old value) — nothing reads or writes it anymore.
+
+### 6. Removed: Date Loaded column (Create Bid Sheets table)
+Straightforward column removal (header, `<col>`, row cell, empty-state colspan). The underlying `item.loaded_date` data field is untouched — still set on item creation elsewhere, just no longer displayed in this table.
+
+### 7. `test.html` — three suites rewritten (not just added to), because they had gone stale or actively wrong
+- `'Bid Sheet — Bid Amount Algorithm'` (v3.1) — was still asserting the pre-Open-Bids formula (increment based on reserve-substituted value, not Item Value). Updated the local `computeBidAmounts()` mirror and its expected numbers (one assertion's expected diff changed from 8 to 7).
+- `'Bid Sheet — Row Height (Global + Per-Item)'` (v3.1) — described a feature that no longer exists. Rewritten to explicitly document the removal rather than deleted outright, so a future session sees "this was removed" instead of just finding no test at all.
+- The three "Open Bids" suites from v6.0/v6.2 — one still used the old `reserveRaw === 0` check, one **actively asserted the now-reversed rule** ("a reserve counts toward Open Bids"), and the Starting Bid List suite quoted stale PHP. All rewritten; the reversed one was kept as its own dedicated suite specifically to document the reversal (see item 2 above).
+- Every executable numeric assertion (`bidLadder()`, `computeBidAmounts()`) was independently re-verified against the real formulas in a standalone Node script before deploying, not just eyeballed — this caught the false "Open Bids = 0 disables the category entirely" claim from the v6.0 session (a $0/undeclared item still qualifies at exactly 0) during a prior pass, and this session's rewrite followed the same discipline.
+
+### 8. Checkpoint v6.3 — version bump correction
+`/ETCCSAMCheckpoint` (no version argument) was run and a **major** bump to v7.0 was applied by mistake — the standing procedure is minor-by-default, major only if the user explicitly asks, and no such request was made this time. Caught before committing; reverted to **v6.3** (correct minor bump from v6.2) via a direct edit to the footer span, then re-deployed and committed normally. No v7.0 was ever pushed or is live anywhere.
+
+### Files touched this session
+| File | Status | Notes |
+|---|---|---|
+| `index.html` | committed (`94fd61d`) | OPEN/PREMIUM algorithm rewrite + `>=100` bracket fix; fixed-height Description/info-row boxes + grid overflow fix; Row Height column/toolbar removed, replaced with `BID_SHEET_ROW_HEIGHT_IN` (0.40); Date Loaded column removed; version bump to v6.3 (corrected from an erroneous v7.0) |
+| `starting-bid-list.php` | committed (`94fd61d`) | Mirrors the final OPEN/PREMIUM Value-alone rule; header comment updated |
+| `test.html` | committed (`94fd61d`) | 3 suites rewritten (not just added), 3 new suites added, all executable assertions independently re-verified in Node. Confirmed green by the user. |
+
+---
+
+## What was accomplished this session (checkpoint v6.2)
+
+Continuation of the same-day v6.1 session. Two new bid-sheet features plus one iOS bug fix — note that this checkpoint's "reserve counts toward Open Bids" change was **reversed in the very next checkpoint (v6.3)** after a real bug report; see that write-up above for the full story. Read this section for historical context only, not as the current rule.
+
+### 1. Favicon — apple-touch-icon added for iOS
+**Symptom reported:** the favicon didn't appear on iPhone/iPad. **Root cause:** iOS Safari ignores `<link rel="icon">` entirely — it only reads `<link rel="apple-touch-icon">`, which this app never had. **Fix:** added the tag to `<head>`, wired `updateFavicon()` to keep it in lockstep with the regular favicon (same Club Favicon URL setting, no new field). **Known limitation, explicitly flagged in a test assertion:** the current default image (`Images/ETCClogoWhiteBackground.png`) is 150×116px and non-square, below Apple's 180×180 square guidance — no image-editing tooling was available in this environment to produce a proper one, so iOS may crop/pad it imperfectly. Shows something now rather than nothing, but isn't crisp.
+
+### 2. "Open Bids" — new bid-sheet category (first version, later revised)
+New Settings → Auction Setup → "Open Bids" threshold (default $35): items at or below it get a $1 (or reserve, if the reserve itself was also ≤ threshold under this version's rule) opening bid with no preprinted increments. **This session's rule for what counted as "open"** — a reserve counted toward the check, not just an unreserved low-value item — **was reversed in v6.3**; see that write-up for why. The Settings UI, `DEFAULT_SETTINGS.openBidMax`, and the general shape of the feature (fixed row 1, blank rows 2-20) all survived into the current version unchanged; only the membership rule changed.
+
+### 3. Bid ladder — every preprinted row forced strictly higher than the last
+Real bug: rounding a sub-$1 increment could collapse consecutive rows onto the same dollar figure (e.g. a $2 reserve stepping by $0.20 printed `2, 2, 2, 3, 3...`). Fixed with a per-row guard (`if (prevAmt !== null && amt <= prevAmt) amt = prevAmt + 1`) rather than rounding the increment up globally, specifically so already-correct ladders keep their exact amounts. This guard is unchanged in the current (v6.3) version of the algorithm.
+
+### Files touched this session
+| File | Status | Notes |
+|---|---|---|
+| `index.html` | committed (`6be9812`) | apple-touch-icon + `updateFavicon()` sync; Open Bids setting (first version, later revised) + rising-ladder guard; version bump to v6.2 |
+| `starting-bid-list.php` | committed (`6be9812`) | Open Bids rule mirrored (first version, later revised) |
+| `test.html` | committed (`6be9812`) | New suites for apple-touch-icon and the first Open Bids version (the latter later rewritten in v6.3). Confirmed green by the user. |
 
 ---
 
