@@ -3243,6 +3243,28 @@ function runAll() {
         'Verified: BID_SHEET_ROW_HEIGHT_IN = 0.40 (was 0.28) — at 20 rows that\'s 8in of bid-table height alone, plus the fixed 0.92in description + 0.50in info row + header, requested explicitly to fill more of the page'),
     ]);
 
+    // ── Create Bid Sheets table — Donor Name/Email wrap fix (v6.4) ───────────────
+    // Same overflow bug fixed earlier this session on the Donated Items table
+    // (#items-table) recurred here because #bs-items-table has entirely
+    // separate row-rendering code (refreshBsItemsTable()) that never got the
+    // same treatment — same donor data (item 900-1, "Wilderness Trail
+    // Distillery, Attn. Grayson Yaden") overflowed past its column into the
+    // next cell on this table too.
+    renderSuite('Create Bid Sheets table — Donor Name/Email wrap fix (v6.4)', [
+      assert('Donor Name and Donor Email cells in #bs-items-table now wrap instead of overflowing', true,
+        'Verified: refreshBsItemsTable()\'s donorName/donorEmail <td>s gained white-space:normal;word-break:break-word;vertical-align:top, matching the fix already applied to #items-table\'s equivalent cells earlier this session'),
+      assert('printDonatedItemsList() (the "Print" button\'s standalone page) was checked and left unchanged', true,
+        'Verified: that function\'s <table> has no table-layout:fixed and no explicit column widths — default auto table layout already resizes columns to fit content, so it isn\'t exposed to this overflow bug and needed no fix'),
+    ]);
+
+    // ── Registrations table — height matched to sibling screens (v6.4) ──────────
+    renderSuite('Registrations table — scroll height matched to sibling screens (v6.4)', [
+      assert('#bidders-card\'s scroll container was subtracting ~110px more than comparable screens', true,
+        'Verified: it used max-height:calc(100vh - 388px) while every structurally similar screen (Winning Bidders, Create Bid Sheets, Payments, etc.) uses calc(100vh - 278px) — despite Winning Bidders having comparable extra content above its table (a save-note bar) to Registrations\' metric-row'),
+      assert('Fixed by matching the established 278px convention rather than picking an arbitrary new number', true,
+        'Verified: #bidders-card\'s scroll div changed from calc(100vh - 388px) to calc(100vh - 278px), reclaiming roughly 110px of table height so more of the 32 registered bidders are visible before scrolling'),
+    ]);
+
     // Clear test data
     _store['sam_items'] = null;
     _store['sam_winners'] = null;

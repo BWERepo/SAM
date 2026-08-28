@@ -21,8 +21,8 @@
        Screen") — it only looks at apple-touch-icon. Kept in sync with the same
        Club Branding favicon by updateFavicon() below. -->
   <link rel="apple-touch-icon" id="apple-touch-icon-link" href="Images/ETCClogoWhiteBackground.png" />
-  <link rel="stylesheet" href="css/table.css?v=1787926826" />
-  <link rel="stylesheet" href="css/toolbar.css?v=1787926826" />
+  <link rel="stylesheet" href="css/table.css?v=1787927772" />
+  <link rel="stylesheet" href="css/toolbar.css?v=1787927772" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1252,7 +1252,7 @@
 
       <div class="card" id="bidders-card">
         <div id="bidders-toolbar-wrap"></div>
-        <div style="overflow-x:auto;max-height:calc(100vh - 388px);overflow-y:auto;">
+        <div style="overflow-x:auto;max-height:calc(100vh - 278px);overflow-y:auto;">
           <table class="tablekit" id="bidders-table" style="table-layout:fixed;width:100%;min-width:860px;">
             <colgroup>
               <col style="width:100px;"><col style="width:180px;"><col style="width:180px;">
@@ -2401,8 +2401,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="js/table.js?v=1787926826"></script>
-<script src="js/toolbar.js?v=1787926826"></script>
+<script src="js/table.js?v=1787927772"></script>
+<script src="js/toolbar.js?v=1787927772"></script>
 <script>
 (function() {
   const _origInit = PageToolbar.init.bind(PageToolbar);
@@ -6050,8 +6050,8 @@ function refreshBsItemsTable() {
       <td style="white-space:normal;word-break:break-word;vertical-align:top;">${escHtml(item.description)}</td>
       <td>${fmtDollar(item.item_value)}</td>
       <td>${parseMoney(item.reserve_amount) > 0 ? fmtDollar(item.reserve_amount) : ''}</td>
-      <td>${escHtml(item.donor_name)}</td>
-      <td style="font-size:11px;">${escHtml(item.donor_email)}</td>
+      <td style="white-space:normal;word-break:break-word;vertical-align:top;">${escHtml(item.donor_name)}</td>
+      <td style="font-size:11px;white-space:normal;word-break:break-word;vertical-align:top;">${escHtml(item.donor_email)}</td>
       <td style="font-size:11px;">${escHtml(item.donor_phone)}</td>
     `;
     tbody.appendChild(tr);
@@ -11072,7 +11072,7 @@ async function testSamApiUrl() {
 <div id="app-footer">
   <div>&copy; 2026 <span id="footer-club-name">${getClub().name}</span> &nbsp;&middot;&nbsp; Knoxville, TN</div>
   <div><a href="mailto:etccwebsite.webmanager@gmail.com">etccwebsite.webmanager@gmail.com</a></div>
-  <div>Version: <span id="app-version">v6.3</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 28, 2026 2:20 PM</span></div>
+  <div>Version: <span id="app-version">v6.4</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 28, 2026 2:36 PM</span></div>
   <div>Website by Business Web Express &nbsp;&middot;&nbsp; <a href="mailto:info@businesswebexpress.com">info@businesswebexpress.com</a></div>
 </div>
 
