@@ -1,6 +1,13 @@
 # Deploy SAM to Hostinger via FTP
 # Usage: .\deploy.ps1 index.html    (deploy single file)
 #        .\deploy.ps1               (deploy all files)
+#
+# Uses .NET's FtpWebRequest rather than curl.exe. curl on this machine uses the
+# Schannel TLS backend, which has an intermittent-to-persistent bug against this
+# host's FTPS server: the file transfers completely, but curl fails to read the
+# final "226 Transfer complete" control-channel response and reports exit 56 —
+# so a run that LOOKS successful (100% uploaded) can silently not have taken
+# effect on the server at all. FtpWebRequest doesn't hit this issue.
 
 $creds = @{}
 Get-Content "$PSScriptRoot\.ftp-credentials" | ForEach-Object {
@@ -14,9 +21,8 @@ $remotePath = $creds["FTP_REMOTE_PATH"]
 $local      = $PSScriptRoot
 $appUrl     = "https://etccapps.com/apps/sam/"
 
-# Write netrc to temp file so password special chars aren't interpreted by shell
-$netrcFile = "$env:TEMP\.netrc-sam"
-"machine $ftpHost login $ftpUser password $ftpPass" | Out-File -FilePath $netrcFile -Encoding ascii
+# Accept the server's cert without validation (matches curl's old --insecure).
+[Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 
 $exclude = @(".git", ".ftp-credentials", "deploy.ps1", "CLAUDE.md", "README.md", "node_modules", "run-tests.js", "package.json", "package-lock.json")
 
@@ -28,14 +34,55 @@ function Should-Exclude($path) {
     return $false
 }
 
+# Creates each intermediate remote directory (mkdir -p equivalent — curl's
+# --ftp-create-dirs did this implicitly; FtpWebRequest does not).
+function New-RemoteDir($relDir) {
+    if (-not $relDir) { return }
+    $parts = $relDir -replace "\\", "/" -split "/"
+    $built = ""
+    foreach ($part in $parts) {
+        if (-not $part) { continue }
+        $built = if ($built) { "$built/$part" } else { $part }
+        $dirUrl = if ($remotePath) { "ftp://${ftpHost}:${ftpPort}/${remotePath}/${built}" } else { "ftp://${ftpHost}:${ftpPort}/${built}" }
+        try {
+            $req = [System.Net.FtpWebRequest]::Create($dirUrl)
+            $req.Credentials = New-Object System.Net.NetworkCredential($ftpUser, $ftpPass)
+            $req.Method = [System.Net.WebRequestMethods+Ftp]::MakeDirectory
+            $req.EnableSsl = $true
+            $req.UsePassive = $true
+            $resp = $req.GetResponse()
+            $resp.Close()
+        } catch {
+            # Directory already exists (or other benign error) — ignore, mirrors --ftp-create-dirs.
+        }
+    }
+}
+
 function Deploy-File($rel) {
     $localPath  = Join-Path $local $rel
     $relForward = $rel -replace "\\", "/"
+    $relDir     = Split-Path $relForward -Parent
+    if ($relDir) { New-RemoteDir $relDir }
     $url = if ($remotePath) { "ftp://${ftpHost}:${ftpPort}/${remotePath}/${relForward}" } else { "ftp://${ftpHost}:${ftpPort}/${relForward}" }
     Write-Host "Uploading $rel ..." -ForegroundColor Cyan
-    $out = & curl.exe --ssl --insecure --ftp-create-dirs --netrc-file $netrcFile -T $localPath $url 2>&1
-    if ($LASTEXITCODE -eq 0) { Write-Host "  OK" -ForegroundColor Green }
-    else { Write-Host "  FAILED: $out" -ForegroundColor Red }
+    try {
+        $req = [System.Net.FtpWebRequest]::Create($url)
+        $req.Credentials = New-Object System.Net.NetworkCredential($ftpUser, $ftpPass)
+        $req.Method = [System.Net.WebRequestMethods+Ftp]::UploadFile
+        $req.EnableSsl = $true
+        $req.UsePassive = $true
+        $req.UseBinary = $true
+        $bytes = [System.IO.File]::ReadAllBytes($localPath)
+        $req.ContentLength = $bytes.Length
+        $stream = $req.GetRequestStream()
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Close()
+        $resp = $req.GetResponse()
+        $resp.Close()
+        Write-Host "  OK" -ForegroundColor Green
+    } catch {
+        Write-Host "  FAILED: $($_.Exception.Message)" -ForegroundColor Red
+    }
 }
 
 # Bake the deploy date directly into the footer span at deploy time.
@@ -78,7 +125,6 @@ function Update-CacheBust {
 if ($args.Count -gt 0) {
     if ($args[0] -eq "index.html") { Update-Version; Update-CacheBust }
     Deploy-File $args[0]
-    Remove-Item $netrcFile -Force -ErrorAction SilentlyContinue
     Write-Host "URL: $appUrl" -ForegroundColor Cyan
     exit
 }
@@ -94,7 +140,9 @@ foreach ($file in $files) {
     $rel = $file.FullName.Substring($local.Length + 1)
     Write-Progress -Activity "Deploying" -Status "$i of $($files.Count): $rel" -PercentComplete (($i / $files.Count) * 100)
     Deploy-File $rel
+    # Brief pause between files — rapid back-to-back FTP connections have
+    # triggered a transient "450 File unavailable (file busy)" from this host.
+    Start-Sleep -Milliseconds 300
 }
-Remove-Item $netrcFile -Force -ErrorAction SilentlyContinue
 Write-Host "Deploy complete." -ForegroundColor Green
 Write-Host "URL: $appUrl" -ForegroundColor Cyan
