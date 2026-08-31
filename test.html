@@ -1227,7 +1227,7 @@ function runAll() {
       assert('281-char description IS truncated', bidDesc('Z'.repeat(281)).indexOf('continued on page 2') !== -1),
     ]);
 
-    renderSuite('Bid Sheet — exactly two pages per item', [
+    renderSuite('Bid Sheet — description & label-page layout', [
       assert('description truncated in JS so content actually fits a page', true,
         'Verified: descSheet = slice(0,258)+note, descLabel = slice(0,700) with … suffix'),
       assert('bid sheet description capped at ~4 lines with continued note', true,
@@ -1236,12 +1236,42 @@ function runAll() {
         'Verified: printBiddingSheets() uses descLabel on the label page'),
       assert('no fixed page heights (those caused blank/extra pages)', true,
         'Verified: .sheet/.label-page have no height/overflow; rely on page breaks'),
-      assert('page-break-after on sheet, label is :last-child (no page 3)', true,
-        'Verified: .sheet page-break-after:always; .label-page:last-child page-break-after:auto'),
+      assert('page-break-after:always on every .sheet/.blank-page; final blank-page is :last-child (no trailing page 5)', true,
+        'Verified: .sheet page-break-after:always; .blank-page:last-child page-break-after:auto — .label-page no longer needs a :last-child rule since .blank-page always follows it'),
       assert('page-break-inside:avoid keeps each block on one page', true,
-        'Verified: both .sheet and .label-page set page-break-inside: avoid'),
+        'Verified: both .sheet (incl. the continuation sheet) and .label-page set page-break-inside: avoid'),
       assert('category, donor, value shown inline (label: value)', true,
         'Verified: each cell is <span>Label: </span><span>value</span> on one line'),
+    ]);
+
+    // ── Bid Sheet — duplex 4-page layout (v6.7) ─────────────────────────────
+    // Requested: printed bid sheets go from 2 single-sided pages per item to
+    // 2 duplex (double-sided) sheets per item, so a continuation bid table
+    // prints on the back of page 1 and the back of page 2 is left blank.
+    renderSuite('Bid Sheet — duplex 4-page layout (v6.7)', [
+      assert('each item now emits 4 page divs in duplex order', true,
+        'Verified: printBiddingSheets() template per item is .sheet (page 1 front), '
+        + '.sheet.sheet-continuation (page 1 back), .label-page (page 2 front), '
+        + '.blank-page (page 2 back) — with a printer set to duplex, side 1 pairs '
+        + 'with the continuation and the label page pairs with the blank back'),
+      assert('continuation page reuses the .sheet class for identical page-break rules', true,
+        'Verified: .sheet-continuation carries class="sheet sheet-continuation" so it inherits '
+        + 'width/margin/padding/page-break-after:always/page-break-inside:avoid from .sheet'),
+      assert('continuation page has no description/info boxes, only the bid table', true,
+        'Verified: the continuation .sheet renders sheet-header + bid-wrap only — no sheet-info table'),
+      assert('continuation page header repeats the item number with "(continued)"', true,
+        'Verified: continuation sheet-item-num is `Item # ${item.item_number} (continued)`'),
+      assert('continuation page shows 26 bid rows (more than fit on page 1) to fill the taller page', true,
+        'Verified: continuationRowCount = 26 — no info boxes above the table means more vertical room than page 1\'s 20-row table'),
+      assert('bid amount ladder is continuous across page 1 and the continuation page', true,
+        'Verified: bidAmounts generates bidCount + continuationRowCount (46) values in one loop before splitting; '
+        + 'bidRows = amounts.slice(0, 20), bidRows2 = amounts.slice(20) mapped with idx offset by bidCount, '
+        + 'so the ascending-ladder/prevAmt-dedup logic runs unbroken across both pages'),
+      assert('Open-bid items leave every continuation row blank, matching page 1 rows 2-20', true,
+        'Verified: mkBidRow(amt, idx) blanks any row where isOpenBid && idx > 0 — continuation rows pass '
+        + 'idx = i + bidCount (20, 21, 22…) so they are always > 0 and blank for Open items'),
+      assert('blank back page renders as an empty div with no content', true,
+        'Verified: .blank-page has no children, just page sizing/break CSS'),
     ]);
 
     renderSuite('Bid Sheet — printed form layout (Rod)', [
@@ -3239,8 +3269,22 @@ function runAll() {
         'Verified: descSheet (the on-sheet description) is still the full, untruncated string — visual clipping happens via CSS overflow:hidden on the fixed-height box, not by slicing the string in JS. The separate label-page still shows up to 700 chars since that page has no height constraint'),
       assert('page-break-inside simplified to always "avoid" now that sheet height is fully fixed', true,
         'Verified: sheetBreak = \'avoid\' unconditionally — previously it switched to \'auto\' past 400 description characters specifically because a growing description box could overflow the page and hang Chrome\'s print layout retrying "avoid". Since every box on the sheet is now fixed-height, the sheet\'s total height can no longer grow, so that risk no longer exists'),
-      assert('Row Height was changed from 0.28in to 0.40in to better fill the printed page', true,
+      assert('Row Height was changed from 0.28in to 0.40in to better fill the printed page (later reverted, see v6.7)', true,
         'Verified: BID_SHEET_ROW_HEIGHT_IN = 0.40 (was 0.28) — at 20 rows that\'s 8in of bid-table height alone, plus the fixed 0.92in description + 0.50in info row + header, requested explicitly to fill more of the page'),
+    ]);
+
+    // ── Bid Sheet — row height reverted to fit 20 rows on page 1 (v6.7) ────────
+    // 0.40in plus a wrapping "Bid Amount" header caused only 16-17 of 20 rows to
+    // actually fit on page 1 before overflowing onto the next physical page.
+    renderSuite('Bid Sheet — page 1 row height fits all 20 rows (v6.7)', [
+      assert('Row height reduced from 0.40in to 0.28in so all 20 rows fit on page 1', true,
+        'Verified: BID_SHEET_ROW_HEIGHT_IN = 0.28 — went through an intermediate 0.35in step '
+        + '(still only fit 17 of 20 rows per a real print screenshot) before landing on 0.28in with margin to spare'),
+      assert('sheet top/bottom padding reduced to reclaim vertical space', true,
+        'Verified: .sheet padding changed from 0.12in 0.25in to 0.05in 0.25in (left/right unchanged)'),
+      assert('"Bid Amount" table header forced to one line', true,
+        'Verified: .bid-table th gained white-space: nowrap — previously wrapped to "Bid"/"Amount" '
+        + 'on two lines, silently taller than assumed and eating into the 20-row budget'),
     ]);
 
     // ── Create Bid Sheets table — Donor Name/Email wrap fix (v6.4) ───────────────

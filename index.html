@@ -21,8 +21,8 @@
        Screen") — it only looks at apple-touch-icon. Kept in sync with the same
        Club Branding favicon by updateFavicon() below. -->
   <link rel="apple-touch-icon" id="apple-touch-icon-link" href="Images/ETCClogoWhiteBackground.png" />
-  <link rel="stylesheet" href="css/table.css?v=1787934932" />
-  <link rel="stylesheet" href="css/toolbar.css?v=1787934932" />
+  <link rel="stylesheet" href="css/table.css?v=1788187313" />
+  <link rel="stylesheet" href="css/toolbar.css?v=1788187313" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -2449,8 +2449,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="js/table.js?v=1787934932"></script>
-<script src="js/toolbar.js?v=1787934932"></script>
+<script src="js/table.js?v=1788187313"></script>
+<script src="js/toolbar.js?v=1788187313"></script>
 <script>
 (function() {
   const _origInit = PageToolbar.init.bind(PageToolbar);
@@ -4400,10 +4400,15 @@ function printBiddingSheets() {
   debugLog(`Printing bid sheets for ${checked.length} item${checked.length !== 1 ? 's' : ''}`);
 
   const bidCount     = 20; // fixed at 20 rows so each bid sheet fills exactly one page
+  // Continuation page (page 1, back side) has no description/info box above
+  // its table, so more rows fit in the same page height — 26 rows at the
+  // same row height fills the page the way 20 rows + the info boxes do on
+  // the front side.
+  const continuationRowCount = 26;
   // Fixed, not user-configurable — the per-item override column and the
   // toolbar's global control were both removed so every sheet's bid-row
   // height is identical, matching the fixed description/info-row heights below.
-  const BID_SHEET_ROW_HEIGHT_IN = 0.40;
+  const BID_SHEET_ROW_HEIGHT_IN = 0.28;
   const rowHeight    = BID_SHEET_ROW_HEIGHT_IN;
   // ══════════════════════════════════════════════════════════════════════════
   // BID SHEET ALGORITHM (Settings → Auction Setup → "Open Bids", default $35)
@@ -4436,9 +4441,13 @@ function printBiddingSheets() {
     // 10% of Value if Value < $100, 7% of Value if Value >= $100.
     const incPct = itemValueRaw >= 100 ? 0.07 : 0.10;
     const incrementAmount = isOpenBid ? 0 : itemValueRaw * incPct;
+    // Generate amounts for the page-1 rows plus the page-1-back continuation
+    // rows up front so the increment keeps climbing seamlessly from row 20
+    // into row 21.
+    const totalRowCount = bidCount + continuationRowCount;
     const bidAmounts = [];
     let prevAmt = null;
-    for (let i = 0; i < bidCount; i++) {
+    for (let i = 0; i < totalRowCount; i++) {
       let amt = Math.round(startingBid + i * incrementAmount);
       // Rounding an increment under $1 collapsed consecutive rows onto the same
       // dollar figure — a $2 reserve (10% = $0.20/step) printed 2, 2, 2, 3, 3...
@@ -4449,13 +4458,16 @@ function printBiddingSheets() {
       prevAmt = amt;
       bidAmounts.push(amt);
     }
-    const bidRows   = bidAmounts.map((amt, idx) => {
-      // Open-bid sheets print the $1 opening bid on row 1 only; rows 2-N stay
-      // blank so bidders can write in whatever they want.
+    const mkBidRow = (amt, idx) => {
+      // Open-bid sheets print the $1 opening bid on row 1 only; every other
+      // row (on either page) stays blank so bidders can write in their own.
       if (isOpenBid && idx > 0) return `<tr><td></td><td></td><td></td></tr>`;
       const disp = '$' + amt.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
       return `<tr><td></td><td></td><td>${disp}</td></tr>`;
-    }).join('');
+    };
+    const bidRows  = bidAmounts.slice(0, bidCount).map(mkBidRow).join('');
+    // Continuation page (page 1, back side): rows 21-40+, same ladder.
+    const bidRows2 = bidAmounts.slice(bidCount).map((amt, i) => mkBidRow(amt, i + bidCount)).join('');
     // Description box is a fixed 4-line height (see the sheet-info table
     // below) — anything beyond that is visually clipped on the bid sheet
     // itself (overflow:hidden), for a uniform layout across every sheet
@@ -4510,12 +4522,25 @@ function printBiddingSheets() {
         </table>
       </div>
     </div>
+    <div class="sheet sheet-continuation" style="--row-h:${rowHeight}in;page-break-inside:${sheetBreak};--bid-amt-w:${bidAmtColW}in;--bid-other-w:${bidOtherColW}in;">
+      <div class="sheet-header">
+        <div class="sheet-title">${getClub().name} — Silent Auction</div>
+        <div class="sheet-item-num">Item # ${escHtml(String(item.item_number))} (continued)</div>
+      </div>
+      <div class="bid-wrap">
+        <table class="bid-table">
+          <thead><tr><th>Print Bidder Initials</th><th>Reg #</th><th>Bid Amount</th></tr></thead>
+          <tbody>${bidRows2}</tbody>
+        </table>
+      </div>
+    </div>
     <div class="label-page">
       <div class="label-content">
         <div class="label-item-num">Item # ${escHtml(String(item.item_number))}</div>
         <div class="label-desc">${escHtml(descLabel)}</div>
       </div>
     </div>
+    <div class="blank-page"></div>
   `;
   }).join('');
 
@@ -4532,7 +4557,7 @@ function printBiddingSheets() {
      height depend on the browser resolving table % heights in print, which is
      unreliable). page-break-inside:avoid keeps it on one page; the fixed row
      height below is sized so 20 rows + a 4-line description always fit. */
-  .sheet { width: 7.5in; margin: 0 auto; padding: 0.12in 0.25in; page-break-after: always; page-break-inside: avoid; }
+  .sheet { width: 7.5in; margin: 0 auto; padding: 0.05in 0.25in; page-break-after: always; page-break-inside: avoid; }
   .sheet:last-child { page-break-after: auto; }
   .sheet-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #1d1d1f; padding-bottom: 2px; margin-bottom: 2px; }
   .sheet-title { font-size: 10.8px; font-weight: 700; color: #1d1d1f; }
@@ -4554,7 +4579,7 @@ function printBiddingSheets() {
      ink) unless explicitly told to keep them — without this, the header row
      background prints as plain white. Scoped to just the header cells since
      that's the only background these bid sheets need to force-print. */
-  .bid-table th { background: #d2d2d7; font-weight: 800; padding: 1px 4px; border: 1px solid #000; text-align: left; font-size: 16.8px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bid-table th { background: #d2d2d7; font-weight: 800; padding: 1px 4px; border: 1px solid #000; text-align: left; font-size: 16.8px; white-space: nowrap; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .bid-table td { padding: 1px 4px; border: 1px solid #000; height: var(--row-h, ${rowHeight}in); vertical-align: middle; }
   /* Bidder Initials and Reg Number share equal width; Bid Amount matches the
      Value box width above it via --bid-amt-w (set per-sheet in JS). */
@@ -4566,10 +4591,15 @@ function printBiddingSheets() {
      JS so it fits one page; page-break-inside:avoid keeps it together, no fixed
      height (fixed heights were causing each block to span two pages). */
   .label-page { width: 7.5in; margin: 0 auto; page-break-after: always; page-break-inside: avoid; text-align: center; box-sizing: border-box; padding: 0.4in 0.5in 0; }
-  .label-page:last-child { page-break-after: auto; }
   .label-content { width: 100%; }
   .label-item-num { font-size: 36pt; font-weight: 800; color: #0071e3; line-height: 1.2; }
   .label-desc { font-size: 24pt; font-weight: 600; color: #1d1d1f; line-height: 1.25; margin-top: 24px; }
+  /* Blank back side of page 2 (duplex pairing: sheet/continuation = page 1
+     front/back, label/blank = page 2 front/back). Always the last of the
+     4 pages per item, so it always gets page-break-after:auto via :last-child
+     below rather than the shared always-break rule. */
+  .blank-page { width: 7.5in; margin: 0 auto; page-break-after: always; }
+  .blank-page:last-child { page-break-after: auto; }
   @page { size: letter portrait; margin: 0.3in; }
   @media print { body { margin: 0; } .sheet { width: 100%; padding: 0; } .label-page { width: 100%; } }
 
@@ -11209,7 +11239,7 @@ async function testSamApiUrl() {
 <div id="app-footer">
   <div>&copy; 2026 <span id="footer-club-name">${getClub().name}</span> &nbsp;&middot;&nbsp; Knoxville, TN</div>
   <div><a href="mailto:etccwebsite.webmanager@gmail.com">etccwebsite.webmanager@gmail.com</a></div>
-  <div>Version: <span id="app-version">v6.6</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 28, 2026 4:35 PM</span></div>
+  <div>Version: <span id="app-version">v6.7</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 31, 2026 2:58 PM</span></div>
   <div>Website by Business Web Express &nbsp;&middot;&nbsp; <a href="mailto:info@businesswebexpress.com">info@businesswebexpress.com</a></div>
 </div>
 
