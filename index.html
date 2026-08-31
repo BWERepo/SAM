@@ -21,8 +21,8 @@
        Screen") — it only looks at apple-touch-icon. Kept in sync with the same
        Club Branding favicon by updateFavicon() below. -->
   <link rel="apple-touch-icon" id="apple-touch-icon-link" href="Images/ETCClogoWhiteBackground.png" />
-  <link rel="stylesheet" href="css/table.css?v=1788187313" />
-  <link rel="stylesheet" href="css/toolbar.css?v=1788187313" />
+  <link rel="stylesheet" href="css/table.css?v=1788189158" />
+  <link rel="stylesheet" href="css/toolbar.css?v=1788189158" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -2449,8 +2449,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="js/table.js?v=1788187313"></script>
-<script src="js/toolbar.js?v=1788187313"></script>
+<script src="js/table.js?v=1788189158"></script>
+<script src="js/toolbar.js?v=1788189158"></script>
 <script>
 (function() {
   const _origInit = PageToolbar.init.bind(PageToolbar);
@@ -4401,14 +4401,16 @@ function printBiddingSheets() {
 
   const bidCount     = 20; // fixed at 20 rows so each bid sheet fills exactly one page
   // Continuation page (page 1, back side) has no description/info box above
-  // its table, so more rows fit in the same page height — 26 rows at the
-  // same row height fills the page the way 20 rows + the info boxes do on
-  // the front side.
-  const continuationRowCount = 26;
+  // its table, so more rows fit in the same page height than page 1's 20 —
+  // but it's still bounded by BID_SHEET_ROW_HEIGHT_IN. At 0.40in/row, 23 rows
+  // fills the page without overflowing onto a second physical page (the info
+  // boxes that page 1 carries are worth roughly 8 more 0.40in rows' worth of
+  // height, which the continuation page doesn't have, hence 23 vs 20).
+  const continuationRowCount = 23;
   // Fixed, not user-configurable — the per-item override column and the
   // toolbar's global control were both removed so every sheet's bid-row
   // height is identical, matching the fixed description/info-row heights below.
-  const BID_SHEET_ROW_HEIGHT_IN = 0.28;
+  const BID_SHEET_ROW_HEIGHT_IN = 0.40;
   const rowHeight    = BID_SHEET_ROW_HEIGHT_IN;
   // ══════════════════════════════════════════════════════════════════════════
   // BID SHEET ALGORITHM (Settings → Auction Setup → "Open Bids", default $35)
@@ -4557,7 +4559,7 @@ function printBiddingSheets() {
      height depend on the browser resolving table % heights in print, which is
      unreliable). page-break-inside:avoid keeps it on one page; the fixed row
      height below is sized so 20 rows + a 4-line description always fit. */
-  .sheet { width: 7.5in; margin: 0 auto; padding: 0.05in 0.25in; page-break-after: always; page-break-inside: avoid; }
+  .sheet { width: 7.5in; margin: 0 auto; padding: 0.12in 0.25in; page-break-after: always; page-break-inside: avoid; }
   .sheet:last-child { page-break-after: auto; }
   .sheet-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #1d1d1f; padding-bottom: 2px; margin-bottom: 2px; }
   .sheet-title { font-size: 10.8px; font-weight: 700; color: #1d1d1f; }
@@ -11239,7 +11241,7 @@ async function testSamApiUrl() {
 <div id="app-footer">
   <div>&copy; 2026 <span id="footer-club-name">${getClub().name}</span> &nbsp;&middot;&nbsp; Knoxville, TN</div>
   <div><a href="mailto:etccwebsite.webmanager@gmail.com">etccwebsite.webmanager@gmail.com</a></div>
-  <div>Version: <span id="app-version">v6.7</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 31, 2026 2:58 PM</span></div>
+  <div>Version: <span id="app-version">v6.8</span> &nbsp;&middot;&nbsp; Deployed: <span id="app-deploy-date">Aug 31, 2026 3:12 PM</span></div>
   <div>Website by Business Web Express &nbsp;&middot;&nbsp; <a href="mailto:info@businesswebexpress.com">info@businesswebexpress.com</a></div>
 </div>
 

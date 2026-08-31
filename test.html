@@ -1261,10 +1261,12 @@ function runAll() {
         'Verified: the continuation .sheet renders sheet-header + bid-wrap only — no sheet-info table'),
       assert('continuation page header repeats the item number with "(continued)"', true,
         'Verified: continuation sheet-item-num is `Item # ${item.item_number} (continued)`'),
-      assert('continuation page shows 26 bid rows (more than fit on page 1) to fill the taller page', true,
-        'Verified: continuationRowCount = 26 — no info boxes above the table means more vertical room than page 1\'s 20-row table'),
+      assert('continuation page shows more bid rows than page 1 to fill the taller page (count tracks the row-height constant, see v6.8)', true,
+        'Verified: continuationRowCount = 23 (was 26 when BID_SHEET_ROW_HEIGHT_IN was 0.28in) — no info boxes '
+        + 'above the table means more vertical room than page 1\'s 20-row table, but the exact count still has to '
+        + 'shrink/grow with whatever the current row height is so it doesn\'t overflow onto page 2'),
       assert('bid amount ladder is continuous across page 1 and the continuation page', true,
-        'Verified: bidAmounts generates bidCount + continuationRowCount (46) values in one loop before splitting; '
+        'Verified: bidAmounts generates bidCount + continuationRowCount values in one loop before splitting; '
         + 'bidRows = amounts.slice(0, 20), bidRows2 = amounts.slice(20) mapped with idx offset by bidCount, '
         + 'so the ascending-ladder/prevAmt-dedup logic runs unbroken across both pages'),
       assert('Open-bid items leave every continuation row blank, matching page 1 rows 2-20', true,
@@ -1283,9 +1285,9 @@ function runAll() {
         'Verified: table is Bidder # / Bidder Initials / Bid Amount only'),
       assert('trailing blank rows removed', true,
         'Verified: tbody is ${bidRows} with no extra empty <tr>s'),
-      assert('fixed 0.28in rows keep all 20 on page 1', true,
-        'Verified: .bid-table td { height: 0.28in } (5.6in of rows); natural flow + '
-        + 'page-break-inside:avoid keeps the ~7.45in sheet (incl. 4-line desc) on one page'),
+      assert('fixed-height rows (BID_SHEET_ROW_HEIGHT_IN) keep all 20 on page 1', true,
+        'Verified: .bid-table td { height: var(--row-h) }, driven by the BID_SHEET_ROW_HEIGHT_IN constant '
+        + '(currently 0.40in, see v6.8) — natural flow + page-break-inside:avoid keeps the sheet (incl. 4-line desc) on one page'),
       assert('bid table headers larger and bold', true,
         'Verified: .bid-table th { font-size: 14px; font-weight: 800 }'),
       assert('table borders darkened to black', true,
@@ -3273,18 +3275,40 @@ function runAll() {
         'Verified: BID_SHEET_ROW_HEIGHT_IN = 0.40 (was 0.28) — at 20 rows that\'s 8in of bid-table height alone, plus the fixed 0.92in description + 0.50in info row + header, requested explicitly to fill more of the page'),
     ]);
 
-    // ── Bid Sheet — row height reverted to fit 20 rows on page 1 (v6.7) ────────
+    // ── Bid Sheet — row height reduced then reverted, see v6.8 for final state ──
     // 0.40in plus a wrapping "Bid Amount" header caused only 16-17 of 20 rows to
     // actually fit on page 1 before overflowing onto the next physical page.
-    renderSuite('Bid Sheet — page 1 row height fits all 20 rows (v6.7)', [
+    renderSuite('Bid Sheet — page 1 row height fits all 20 rows (v6.7, superseded by v6.8)', [
       assert('Row height reduced from 0.40in to 0.28in so all 20 rows fit on page 1', true,
-        'Verified: BID_SHEET_ROW_HEIGHT_IN = 0.28 — went through an intermediate 0.35in step '
-        + '(still only fit 17 of 20 rows per a real print screenshot) before landing on 0.28in with margin to spare'),
+        'Verified (at the time): BID_SHEET_ROW_HEIGHT_IN = 0.28 — went through an intermediate 0.35in step '
+        + '(still only fit 17 of 20 rows per a real print screenshot) before landing on 0.28in with margin to spare. '
+        + 'Superseded in v6.8: the root cause turned out to be the wrapping header below, not the row height itself, '
+        + 'so this value was reverted back to 0.40in once that was fixed'),
       assert('sheet top/bottom padding reduced to reclaim vertical space', true,
-        'Verified: .sheet padding changed from 0.12in 0.25in to 0.05in 0.25in (left/right unchanged)'),
+        'Verified (at the time): .sheet padding changed from 0.12in 0.25in to 0.05in 0.25in. '
+        + 'Superseded in v6.8: reverted back to 0.12in 0.25in alongside the row-height revert'),
       assert('"Bid Amount" table header forced to one line', true,
         'Verified: .bid-table th gained white-space: nowrap — previously wrapped to "Bid"/"Amount" '
-        + 'on two lines, silently taller than assumed and eating into the 20-row budget'),
+        + 'on two lines, silently taller than assumed and eating into the 20-row budget. This fix was kept '
+        + 'in v6.8 — it was the actual root cause of the overflow, not the row height'),
+    ]);
+
+    // ── Bid Sheet — row height/padding reverted to page-filling values (v6.8) ──
+    // The user's print-scaling setting was also wrong at the time of the v6.7
+    // screenshots, compounding the apparent overflow. With the real root cause
+    // (header wrap) fixed and print scaling corrected, page 1 could go back to
+    // the original page-filling row height without overflowing.
+    renderSuite('Bid Sheet — row height reverted to page-filling value (v6.8)', [
+      assert('Row height reverted from 0.28in back to 0.40in', true,
+        'Verified: BID_SHEET_ROW_HEIGHT_IN = 0.40 — the v6.7 shrink was compensating for the header-wrap bug '
+        + 'and the user\'s incorrect print-dialog scaling, not an inherent page-height problem'),
+      assert('sheet top/bottom padding reverted from 0.05in back to 0.12in', true,
+        'Verified: .sheet padding is 0.12in 0.25in again, matching pre-v6.7'),
+      assert('continuation page row count reduced from 26 to 23 to match the taller 0.40in rows', true,
+        'Verified: continuationRowCount = 23 — 26 rows was sized for 0.28in rows (26*0.28in fit one page); '
+        + 'at 0.40in/row, 26 rows would overflow onto page 2\'s front, confirmed by a real print screenshot '
+        + 'showing the continuation table running past page 1 side 2. 23*0.40in fits the same page budget '
+        + 'that page 1\'s 20 rows + its info boxes use'),
     ]);
 
     // ── Create Bid Sheets table — Donor Name/Email wrap fix (v6.4) ───────────────
